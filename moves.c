@@ -1,5 +1,9 @@
 #include "chess.h"
 
+typedef struct {
+    char CoupJoueur[100];
+}coup;
+
 /*
  *  Convention plateau interne :
  *    board[0] = haut écran = Noir  (minuscules, player_id 2)

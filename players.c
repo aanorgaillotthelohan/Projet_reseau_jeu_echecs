@@ -5,6 +5,26 @@
 /* rangée interne → label affiché */
 #define ROW_TO_LABEL(r) (7-(r))
 
+typedef struct{
+    int socketJoueur;
+    char NomJoueur[20];
+    char Couleur[20];
+    bool rejoinsSalon;
+    char message[128];
+}joueur;
+
+joueur* creejoueur(int socket, char NomDuJoueur[20]){
+    joueur* j = malloc(sizeof(joueur));
+    if(j == NULL){
+        return NULL;
+    }
+    j->NomJoueur[20] = NomDuJoueur;
+    j->socketJoueur =socket;
+    j->Couleur[20] = "blanc";
+    j->rejoinsSalon =false;
+}
+
+
 static void flush_stdin(void)
 {
     int tmp;
