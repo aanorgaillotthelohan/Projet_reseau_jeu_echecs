@@ -5,6 +5,26 @@
 /* rangée interne → label affiché */
 #define ROW_TO_LABEL(r) (7-(r))
 
+typedef struct{
+    int socketJoueur;
+    char NomJoueur[20];
+    char Couleur[20];
+    bool rejoinsSalon;
+    char message[128];
+}joueur;
+
+joueur* creejoueur(int socket, char NomDuJoueur[20]){
+    joueur* j = malloc(sizeof(joueur));
+    if(j == NULL){
+        return NULL;
+    }
+    j->NomJoueur[20] = NomDuJoueur;
+    j->socketJoueur =socket;
+    j->Couleur[20] = "blanc";
+    j->rejoinsSalon =false;
+}
+
+
 static void flush_stdin(void)
 {
     int tmp;
@@ -54,6 +74,7 @@ again1:
     case 'C': bishop(r1,c1,1);  break;
     case 'K': king(r1,c1,1);    break;
     case 'Q': queen(r1,c1,1);   break;
+    case 'A': abandon(1);        break;
     default:  wprintf(L"\u26A0 Choisissez une piece blanche.\n"); goto again1;
     }
 
@@ -126,6 +147,7 @@ again2:
     case 'c': bishop(r1,c1,2);  break;
     case 'k': king(r1,c1,2);    break;
     case 'q': queen(r1,c1,2);   break;
+    case 'A': abandon(2);        break;
     default:  wprintf(L"\u26A0 Choisissez une piece noire.\n"); goto again2;
     }
 

@@ -1,5 +1,9 @@
 #include "chess.h"
 
+typedef struct {
+    char CoupJoueur[100];
+}coup;
+
 /*
  *  Convention plateau interne :
  *    board[0] = haut écran = Noir  (minuscules, player_id 2)
@@ -474,4 +478,18 @@ void queen(int r1, int c1, int player_id)
     wprintf(L"Mouvements possibles %lc : \n",(wchar_t)display_convert(board[r1][c1]));
     if (possible_moves_index>=1) for(int i=0;i<possible_moves_index;i++) wprintf(L" %d :",possible_moves[i]);
     else wprintf(L"Aucun mouvement possible -> ");
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ *  Abandon
+ * ════════════════════════════════════════════════════════════════════════════ */
+void abandon(int player_id){
+    if(player_id == 1){
+        printf("Le Joueur Noir a abandonné \n");
+        printf("Le Joueur Blanc remporte la partie !");
+        
+    }else{
+        printf("Le Joueur Blanc a abandonné \n");
+        printf("Le Joueur Noir remporte la partie !");
+    }
 }
