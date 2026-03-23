@@ -5,13 +5,6 @@
 /* rangée interne → label affiché */
 #define ROW_TO_LABEL(r) (7-(r))
 
-typedef struct{
-    int socketJoueur;
-    char NomJoueur[20];
-    char Couleur[20];
-    bool rejoinsSalon;
-    char message[128];
-}joueur;
 
 joueur* creejoueur(int socket, char NomDuJoueur[20]){
     joueur* j = malloc(sizeof(joueur));
@@ -57,6 +50,8 @@ again1:
     do {
         flush_stdin();
         wprintf(L"\nPosition [label*10+col] : ");
+        *p1 = ;
+        input_control = &p1 ;
         input_control = scanf("%d", &p1);
         if (input_control==0||p1<0||p1>77||p1%10>7)
             wprintf(L"\u26A0 Saisie incorrecte\n");

@@ -3,12 +3,11 @@
 #include "moves.c"
 #include <stdlib.h>
 #include <string.h>
-
+// rajouter un joueur ishere // pas obligatoire ?
 typedef struct{
     int idSalon;
     joueur Joueur1;
     joueur Joueur2;
-
     joueur ListeSpectateurs[20];
     int nbSpectateurs;
     

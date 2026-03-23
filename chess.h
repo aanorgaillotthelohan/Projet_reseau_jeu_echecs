@@ -80,6 +80,15 @@ int  is_square_attacked(int r, int c, int attacker_id);
 int  is_in_check(int player_id);
 
 // ─── Players ──────────────────────────────────────────────────────────────────
+typedef struct{
+    int socketJoueur;
+    char NomJoueur[20];
+    char Couleur[20];
+    bool rejoinsSalon;
+    char message[128];
+    char coupDuTour[10];
+}joueur;
+
 void player_white(void);
 void player_black(void);
 int  check(int x, int y);

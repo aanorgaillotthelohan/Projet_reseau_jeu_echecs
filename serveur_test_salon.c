@@ -15,7 +15,6 @@
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
 #define PORT 8080
 
 
@@ -66,19 +65,14 @@ int main(){
                     //on accepte la connexion du premier venu
                     gestion_erreur(res,"accept");
                     //on répond à sa requête. avec recv et send:
-                    int message[10];
+                    char message[256];
+                    memset(message, 0, sizeof(message)); // vide le buffer avant réception
+                    ssize_t res_ss = recv(dmec_serv, message, sizeof(message) - 1, 0);
+                    gestion_erreur(res_ss, "recv");
+                    printf("Message reçu : %s\n", message);
+
+                    // METTRE JEU ICI ALED
                     
-                    //ATTENTION au descripteur mit, ce n'est pas celui du serveur!
-                    ssize_t res_ss = recv(dmec_serv, message, sizeof(message), 0);
-                    //on recoit le message dans message.
-                    gestion_erreur(res_ss,"recv");
-                    
-                    printf("je suis %d\n", portInit + nbSalon);
-                    printf("On recoit ");
-                    for (int i = 0; i <10; i++){
-                        printf(",%d ",message[i]);
-                    }
-                    printf("\n");
                     /*
                     res_ss = send(dsock, message, sizeof(message), 0) ;
                     gestion_erreur(res_ss,"send");

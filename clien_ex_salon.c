@@ -33,23 +33,22 @@ int main(int argc, char **argv){
     int port = atoi(argv[1]);
     printf("%d \n",port);
     //le message qu'on vas envoyer
-    //EXEMPLE DE MESSAGE, NE VEUT RIEN DIRE
-    int message_mec[10];
-    for (int i = 0; i <10; i++){
-        message_mec[i] = i;
-    }
+
+    char message_mec[256];
+    printf("Entrez votre message : ");
+    fgets(message_mec, sizeof(message_mec), stdin);
     
     //on crée l'adresse serveur à laquelle on veut envoyer:
     struct sockaddr_in adServ ;
     adServ.sin_family = AF_INET ;
     adServ.sin_port = htons(port) ;
-    int res = inet_pton(AF_INET, "10.111.3.110", &(adServ.sin_addr)) ;
+    int res = inet_pton(AF_INET, "127.0.0.1", &(adServ.sin_addr)) ;
     gestion_erreur(res,"inet");
     socklen_t lgA = sizeof(struct sockaddr_in) ;
     //on demande une connection au serveur
     res = connect(dsock_mec, (struct sockaddr *) &adServ, lgA);
     gestion_erreur(res, "connect");
-    ssize_t res_ss_mec = send(dsock_mec, message_mec, sizeof(message_mec), 0) ;
+    ssize_t res_ss_mec = send(dsock_mec, message_mec, strlen(message_mec), 0);
     gestion_erreur(res_ss_mec,"send");
     /*
     res_ss_mec = recv(dsock_mec, message_mec, sizeof(message_mec), 0);
