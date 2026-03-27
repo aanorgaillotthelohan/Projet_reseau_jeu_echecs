@@ -16,9 +16,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define PORT 8080
-
-
 void gestion_erreur(int res, char* chaine){
     if(res == -1 ){
         printf("Erreur lors de %s \n", chaine);
@@ -33,32 +30,55 @@ struct chat_arg{
 };
 
 
+
+
+//fonction pour le test de chat en thread
+
 void chat(void * arg){
     int dschat = ((struct chat_arg*)arg)->ds;
+    //on est en udp donc on peut utiliser le même port que le tcp du processus principal
     printf("port du chat : %d \n",((struct chat_arg*)arg)->port + ((struct chat_arg*)arg)->nb);
     //SOCK_STREAM nous fait fonctionner en tcp
-    int res = listen(dschat, 5);
     //5 est le nombre maximum de connexion qui peuvent être misent en attente
-    gestion_erreur(res,"listen");
+
     socklen_t lgA = sizeof(struct sockaddr_in);
-    int * messagechat; 
+    char messagechat[128]; 
     struct sockaddr_in adClient ;
-    int chat_actif = 0;
+    int chat_actif = 1;
+    char stockmessage[10][128];
+    int position_message = 0;
     while(chat_actif){
-        int reschat = recvfrom(dschat, messagechat, sizeof(messagechat), 0, &adClient,&lgA);
+        //recoit sueulement du mec qui est concerné par dschat, il faudrait une liste pour avoir tout le monde...
+        int reschat = recvfrom(dschat, &messagechat, sizeof(messagechat), 0, &adClient,&lgA);
+        gestion_erreur(reschat,"chat res");
+        //printf("message : %s\n",messagechat);
+        //met le message dans la liste
+        strcpy(stockmessage[position_message] , messagechat);
+        if (position_message < 10){
+            position_message += 1;
+        }
+        else{ 
+            for(int i = 0; i < 9; i++){
+                strcpy(stockmessage[i], stockmessage[i+1]);
+            }
+            position_message = 10;
+            strcpy(stockmessage[9], messagechat);
+        }
+        ssize_t res_udp = sendto(dschat,stockmessage,sizeof(stockmessage),0,&adClient,lgA);
+        gestion_erreur(res_udp,"sendto udp chat");
     }
 }
 
 
 int main(){
-    int socklist[100] ;
     int nbSalon = 0; 
     int creerSalon = 0;
     int chat_deja_creer = 0;
-    int portInit = 1090;
+    int portInit = 1071;
     int portInitChat = 1275;
+    pthread_t chat_t;
     while (1){
-        printf("Est ce que je cree un salon ? (1-0)");
+        printf("Est ce que je cree un salon ? (1-0)\n");
         scanf("%d",&creerSalon);
         if(creerSalon){
             int f = fork();
@@ -77,18 +97,23 @@ int main(){
                 //le port doit être supérieur à 1024
                 int res = bind(dsock, (struct sockaddr*)&ad, sizeof(ad)) ;
                 gestion_erreur(res,"bind");
-                res = listen(dsock, 5);
-                //5 est le nombre maximum de connexion qui peuvent être misent en attente
-                gestion_erreur(res,"listen");
-                struct sockaddr_in adClient ;
-                socklen_t lgA = sizeof(struct sockaddr_in);
-                //la taille de l'adresse
 
-                pthread_t chat_t;
+                res = listen(dsock, 5);
+                //5 est le nombre maximum de connexion qui peuvent être misent en attente, listen, n'est utilisé que par le tcp
+                gestion_erreur(res,"listen");
+
+                //crée la socket pour le udp duc chat
+                int dsockUdp = socket(PF_INET, SOCK_DGRAM, 0);
+                res = bind(dsockUdp, (struct sockaddr*)&ad, sizeof(ad)) ;
+                gestion_erreur(res,"bind Udp");
+
+                struct sockaddr_in adClient ;
+                //la taille de l'adresse
+                socklen_t lgA = sizeof(struct sockaddr_in);
                 struct chat_arg arg;
                 arg.port = portInit;
                 arg.nb = nbSalon;
-                arg.ds = dsock;
+                arg.ds = dsockUdp;
                 pthread_create(&chat_t, 0, chat, &arg);      
 
                 while(1){
