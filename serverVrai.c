@@ -14,10 +14,16 @@
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include "application.c" 
+#include "application.h" 
 
 #define PORT 1061
 #define MAX_CLIENTS 5
+
+typedef struct {
+    char choix;    
+    char idJoueur[128];
+    char Mdp[128];
+} MessageClient;
 
 void gestion_erreur(int res, char* chaine){
     if(res == -1 ){
@@ -46,40 +52,38 @@ int main(){
     while(1){
         struct sockaddr_in adClient;
         socklen_t lgA = sizeof(adClient);
+
         int sockClient = accept(dsock, (struct sockaddr*)&adClient, &lgA);
         gestion_erreur(sockClient, "accept");
 
         printf("Client connecté !\n");
 
-        char idJoueur[128], Mdp[128];
-        char choix;
+        MessageClient msg;
+        ssize_t r = recv(sockClient, &msg, sizeof(msg), 0);
+        gestion_erreur(r, "receive");
 
-        printf("Choix du client (c = connexion / i = inscription) : ");
-        scanf(" %c", &choix);
-        choix = tolower(choix);
+        printf("Reçu :\n");
+        printf("Choix: %c\n", msg.choix);
+        printf("ID: %s\n", msg.idJoueur);
+        printf("MDP: %s\n", msg.Mdp);
 
-        if(choix == 'i'){
-            Inscription(idJoueur, Mdp);
-            printf("Inscription réussie : %s / %s\n", idJoueur, Mdp);
-        } 
-        else if(choix == 'c'){
-            printf("Saisir identifiant : ");
-            scanf(" %s", idJoueur);
-            printf("Saisir mot de passe : ");
-            scanf(" %s", Mdp);
+        char rep = 0;
 
-            if(VerifConnexion(idJoueur, Mdp)){
-                printf("Connexion réussie !\n");
-            } else {
-                char ch = ChoixConnexionNonReconnu();
-                if(ch == 'i'){
-                    Inscription(idJoueur, Mdp);
-                    printf("Inscription après échec : %s / %s\n", idJoueur, Mdp);
-                }
+        if(msg.choix == 'c'){
+            if(VerifConnexion(msg.idJoueur, msg.Mdp)){
+                rep = 1;
             }
         }
+        else if(msg.choix == 'i'){
+            Inscription(msg.idJoueur, msg.Mdp);
+            rep = 1;
+        }
+
+        send(sockClient, &rep, sizeof(rep), 0);
+
         close(sockClient);
     }
+
     close(dsock);
     return 0;
 }
