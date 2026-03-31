@@ -35,8 +35,6 @@ int main(int argc, char **argv){
     //le message qu'on vas envoyer
 
     char message_mec[256];
-    printf("Entrez votre message : ");
-    fgets(message_mec, sizeof(message_mec), stdin);
     
     //on crée l'adresse serveur à laquelle on veut envoyer:
     struct sockaddr_in adServ ;
@@ -48,13 +46,26 @@ int main(int argc, char **argv){
     //on demande une connection au serveur
     res = connect(dsock_mec, (struct sockaddr *) &adServ, lgA);
     gestion_erreur(res, "connect");
+
+    while(1) {
+        printf("Entrez votre message : ");
+        fgets(message_mec, sizeof(message_mec), stdin);
+        
+        if(strncmp(message_mec, "quit", 4) == 0) break;  // taper "quit" pour sortir
+        
+        ssize_t res_ss_mec = send(dsock_mec, message_mec, strlen(message_mec), 0);
+        gestion_erreur(res_ss_mec, "send");
+    }
+
+    close(dsock_mec);
+    /*
     ssize_t res_ss_mec = send(dsock_mec, message_mec, strlen(message_mec), 0);
     gestion_erreur(res_ss_mec,"send");
-    /*
+    
     res_ss_mec = recv(dsock_mec, message_mec, sizeof(message_mec), 0);
     //on recoit le message dans message.
     gestion_erreur(res_ss_mec,"recv");
     */
     
     close(dsock_mec);
-}
+}   

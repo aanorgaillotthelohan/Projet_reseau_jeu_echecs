@@ -15,6 +15,7 @@
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "chess.h"
 #define PORT 8080
 
 
@@ -28,6 +29,7 @@ void gestion_erreur(int res, char* chaine){
 
 
 int main(){
+    joueur j;
     int socklist[100] ;
     int nbSalon = 0; 
     int creerSalon = 0;
@@ -62,21 +64,30 @@ int main(){
                 
                 while(1){
                     int dmec_serv = accept(dsock, (struct sockaddr *) &adClient, &lgA);
-                    //on accepte la connexion du premier venu
-                    gestion_erreur(res,"accept");
-                    //on répond à sa requête. avec recv et send:
-                    char message[256];
-                    memset(message, 0, sizeof(message)); // vide le buffer avant réception
-                    ssize_t res_ss = recv(dmec_serv, message, sizeof(message) - 1, 0);
-                    gestion_erreur(res_ss, "recv");
-                    printf("Message reçu : %s\n", message);
+                    gestion_erreur(dmec_serv, "accept");   // ← correction : tester dmec_serv, pas res
 
-                    // METTRE JEU ICI ALED
-                    
-                    /*
-                    res_ss = send(dsock, message, sizeof(message), 0) ;
-                    gestion_erreur(res_ss,"send");
-                    */
+                    char message[256];
+
+                    // Boucle recv : lit tous les messages envoyés par ce client
+                    while(1){
+                        memset(message, 0, sizeof(message));
+                        ssize_t res_ss = recv(dmec_serv, message, sizeof(message), 0);
+
+                        if(res_ss <= 0) {
+                            printf("Client déconnecté\n");
+                            break;
+                        }
+                        
+                        printf("Message reçu : %s\n", message);
+                        printf("ça continue ?\n");
+
+                        // Copie sécurisée dans coupDuTour (taille 10 max)
+                        strncpy(j.coupDuTour, message, sizeof(j.coupDuTour) - 1);
+                        j.coupDuTour[sizeof(j.coupDuTour) - 1] = '\0';  // garantit le \0 final
+
+                        printf("Coup du tour : %s\n", j.coupDuTour);
+                    }
+                    close(dmec_serv);  // ← fermer la socket client après la session
                 }
                 close(dsock);
             }

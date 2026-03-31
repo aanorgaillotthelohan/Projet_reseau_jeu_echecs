@@ -50,7 +50,6 @@ again1:
     do {
         flush_stdin();
         wprintf(L"\nPosition [label*10+col] : ");
-        *p1 = ;
         input_control = &p1 ;
         input_control = scanf("%d", &p1);
         if (input_control==0||p1<0||p1>77||p1%10>7)
