@@ -40,70 +40,83 @@ int main(int argc, char **argv){
 
     char idJoueur[128], Mdp[128];
     char choix;
+    bool JeuEnCour = true;
 
-    printf("Voulez vous vous connecter ou vous inscrire (c = connexion / i = inscription) : ");
-    scanf(" %c", &choix);
-    choix = tolower(choix);
-
-    if(choix == 'i'){
-        Inscription(idJoueur, Mdp);
-    } 
-    else if(choix == 'c'){
-        printf("Saisir identifiant : ");
-        scanf("%s", idJoueur);
-        printf("Saisir mot de passe : ");
-        scanf("%s", Mdp);
-
-        if(!VerifConnexion(idJoueur, Mdp)){
-            char ch = ChoixConnexionNonReconnu();
-            if(ch == 'i'){
-                Inscription(idJoueur, Mdp);
-            }
-        }
-    } else {
-        printf("Choix invalide\n");
-        close(dsock_mec);
-        exit(1);
-    }
-
-    MessageClient msg;
-    msg.choix = choix;
-    strcpy(msg.idJoueur, idJoueur);
-    strcpy(msg.Mdp, Mdp);
-
-    send(dsock_mec, &msg, sizeof(msg), 0);
-
-    char rep;
-    recv(dsock_mec, &rep, sizeof(rep), 0);
-
-    if(rep == 1){
-        printf("Validation serveur OK\n");
-    }else{
-        printf("Refus serveur\n");
-    }
-
-    char choixValid = 0;
-
-    while(!choixValid){
-        printf("Souhaitez-vous Jouer, être spectateur ou regarder votre historique ? (j = Jouer / s = Spectateur / h = historique) : ");
+    printf("Vous quitter le jeu a tout moment en apuyant sur ! (! = quitter) : "); 
+    while(JeuEnCour){
+        printf("Voulez vous vous connecter ou vous inscrire (c = connexion / i = inscription) : ");
         scanf(" %c", &choix);
         choix = tolower(choix);
 
-        if(choix == 'j' || choix == 's' || choix == 'h'){
-            choixValid = 1;
-        } else {
-            printf("Choix invalide. Veuillez saisir uniquement j, s ou h.\n");
+        if(choix == '!'){
+            JeuEnCour = false;
+            break;
         }
-    }
+        else if(choix == 'i'){
+            Inscription(idJoueur, Mdp);
+        } 
+        else if(choix == 'c'){
+            printf("Saisir identifiant : ");
+            scanf("%s", idJoueur);
+            printf("Saisir mot de passe : ");
+            scanf("%s", Mdp);
 
-    if(choix == 'j'){
-        // lancer le jeu
-    }
-    else if (choix == 's'){
-        // mode spectateur
-    }
-    else if(choix == 'h'){
-        // afficher historique
+            if(!VerifConnexion(idJoueur, Mdp)){
+                char ch = ChoixConnexionNonReconnu();
+                if(ch == 'i'){
+                    Inscription(idJoueur, Mdp);
+                }
+            }
+        } else {
+            printf("Choix invalide\n");
+            close(dsock_mec);
+            exit(1);
+        }
+
+        MessageClient msg;
+        msg.choix = choix;
+        strcpy(msg.idJoueur, idJoueur);
+        strcpy(msg.Mdp, Mdp);
+
+        send(dsock_mec, &msg, sizeof(msg), 0);
+
+        char rep;
+        recv(dsock_mec, &rep, sizeof(rep), 0);
+
+        if(rep == 1){
+            printf("Validation serveur OK\n");
+        }else{
+            printf("Refus serveur\n");
+        }
+
+        char choixValid = 0;
+
+        while(!choixValid){
+            printf("Souhaitez-vous Jouer, être spectateur ou regarder votre historique ? (j = Jouer / s = Spectateur / h = historique) : ");
+            scanf(" %c", &choix);
+            choix = tolower(choix);
+            if(choix =='!'){
+                JeuEnCour = false;
+                break;
+            } else if(choix == 'j' || choix == 's' || choix == 'h'){
+                choixValid = 1;
+            } else {
+                printf("Choix invalide. Veuillez saisir uniquement j, s ou h.\n");
+            }
+        }
+        if(choix == '!'){
+            JeuEnCour = false;
+            break;
+        }
+        else if(choix == 'j'){
+            // lancer le jeu
+        }
+        else if (choix == 's'){
+            // mode spectateur
+        }
+        else if(choix == 'h'){
+            // afficher historique
+        }
     }
 
     close(dsock_mec);
