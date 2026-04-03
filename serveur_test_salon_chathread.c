@@ -16,6 +16,20 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+
+#define NB_MAX 5
+struct sockaddr_in liste_clients[NB_MAX];
+int nb_cli = 0;
+
+int connait_client(struct sockaddr_in * cli){
+    for (int i=0; i<nb_cli ; i++){
+        if (liste_clients[i].sin_addr.s_addr == cli->sin_addr.s_addr &&
+            liste_clients[i].sin_port == cli->sin_port)
+            return i;
+    }
+    return -1;
+}
+
 void gestion_erreur(int res, char* chaine){
     if(res == -1 ){
         printf("Erreur lors de %s \n", chaine);
@@ -30,8 +44,6 @@ struct chat_arg{
 };
 
 
-
-
 //fonction pour le test de chat en thread
 
 void chat(void * arg){
@@ -43,7 +55,7 @@ void chat(void * arg){
 
     socklen_t lgA = sizeof(struct sockaddr_in);
     char messagechat[128]; 
-    struct sockaddr_in adClient ;
+    struct sockaddr_in adClient;
     int chat_actif = 1;
     char stockmessage[10][128];
     int position_message = 0;
@@ -51,21 +63,48 @@ void chat(void * arg){
         //recoit sueulement du mec qui est concerné par dschat, il faudrait une liste pour avoir tout le monde...
         int reschat = recvfrom(dschat, &messagechat, sizeof(messagechat), 0, &adClient,&lgA);
         gestion_erreur(reschat,"chat res");
-        //printf("message : %s\n",messagechat);
-        //met le message dans la liste
-        strcpy(stockmessage[position_message] , messagechat);
-        if (position_message < 10){
-            position_message += 1;
-        }
-        else{ 
-            for(int i = 0; i < 9; i++){
-                strcpy(stockmessage[i], stockmessage[i+1]);
+
+        if (strcmp(messagechat, "f") == 0){
+            printf("strcmp \n");
+            int p = connait_client(&adClient);
+            nb_cli--;
+            for(int i = p; i<nb_cli; i++){
+                liste_clients[i]=liste_clients[i+1];
             }
-            position_message = 10;
-            strcpy(stockmessage[9], messagechat);
         }
-        ssize_t res_udp = sendto(dschat,stockmessage,sizeof(stockmessage),0,&adClient,lgA);
-        gestion_erreur(res_udp,"sendto udp chat");
+        else{
+            //printf("message : %s\n",messagechat);
+            //met le message dans la liste
+            strcpy(stockmessage[position_message] , messagechat);
+            if (position_message < 10){
+                position_message += 1;
+            }
+            else{ 
+                for(int i = 0; i < 9; i++){
+                    strcpy(stockmessage[i], stockmessage[i+1]);
+                }
+                position_message = 10;
+                strcpy(stockmessage[9], messagechat);
+            }
+            if(connait_client(&adClient) == -1){
+                if (nb_cli <NB_MAX){
+                    liste_clients[nb_cli] = adClient;
+                    nb_cli ++;
+                    printf("Client ajouté dans chat à la place %d \n",nb_cli-1);
+                }
+                else{
+                    printf("Client rejeté par manque de place.\n");
+                }
+            }
+
+            for(int i=0; i<nb_cli ; i++){
+                ssize_t res_udp = sendto(dschat,stockmessage,sizeof(stockmessage),0,&liste_clients[i],lgA);
+                gestion_erreur(res_udp,"sendto udp chat");
+            }
+        }
+
+
+
     }
 }
 
@@ -74,7 +113,7 @@ int main(){
     int nbSalon = 0; 
     int creerSalon = 0;
     int chat_deja_creer = 0;
-    int portInit = 1071;
+    int portInit = 1082;
     int portInitChat = 1275;
     pthread_t chat_t;
     while (1){
