@@ -86,11 +86,11 @@ typedef struct{
     char Couleur[20];
     bool rejoinsSalon;
     char message[128];
-    char coupDuTour[10];
+    int coupDuTour; 
 }joueur;
 
-void player_white(void);
-void player_black(void);
+void player_white(joueur* j);
+void player_black(joueur* j);
 int  check(int x, int y);
 int  check2(int x, int y);
 

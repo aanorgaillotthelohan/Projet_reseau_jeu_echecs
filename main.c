@@ -14,7 +14,7 @@ int main(void)
     int  x = 1;   /* Tour 1 = Blanc commence */
     char ch;
     char showcase_option;
-
+    joueur* j;
     /* ── Écran titre ────────────────────────────────────────────────────── */
     system("clear");
     intro();
@@ -35,9 +35,9 @@ int main(void)
             display();
 
             if ((x % 2) != 0)
-                player_white();   /* tours impairs : Blanc */
+                player_white(j);   /* tours impairs : Blanc */
             else
-                player_black();   /* tours pairs   : Noir  */
+                player_black(j);   /* tours pairs   : Noir  */
 
             x++;
 
