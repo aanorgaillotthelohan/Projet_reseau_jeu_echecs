@@ -1,11 +1,8 @@
-#include "chess.h"
+#include "utils.h"
 #include <termios.h>
 #include <unistd.h>
+#include <time.h>
 
-/*
- * getch_linux() – remplace getch() de <conio.h> (Windows).
- * Lit un seul caractère sans attendre Entrée, sans écho.
- */
 char getch_linux(void)
 {
     struct termios oldt, newt;
@@ -13,18 +10,13 @@ char getch_linux(void)
 
     tcgetattr(STDIN_FILENO, &oldt);
     newt = oldt;
-    newt.c_lflag &= ~(ICANON | ECHO);   /* mode raw, sans écho */
+    newt.c_lflag &= ~(ICANON | ECHO);
     tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-
     read(STDIN_FILENO, &ch, 1);
-
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldt); /* restaurer le terminal */
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
     return ch;
 }
 
-/*
- * delay() – pause en secondes (compatible Linux/Windows).
- */
 void delay(int number_of_seconds)
 {
     int milli_seconds = 1000 * number_of_seconds;

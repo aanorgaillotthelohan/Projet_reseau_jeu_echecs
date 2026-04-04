@@ -1,7 +1,11 @@
 # ProjetReseauJeuEchec
+comment compiler : faire tout ça EN MEME TEMPS
+gcc -o serveur serveur_test_salon.c globals.c display.c pieces.c moves.c players.c salon.c utils.c
+gcc -o client clien_ex_salon.c
+gcc -o jeu main.c globals.c display.c pieces.c moves.c players.c salon.c utils.c showcase.c
 
-
-
+executer: 
+./jeu ; ./serveur ; ./client
 ## Getting started
 
 To make it easy for you to get started with GitLab, here's a list of recommended next steps.

@@ -1,121 +1,40 @@
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <sys/ipc.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <stddef.h>
-#include <sys/types.h>
-#include <pthread.h>
-#include <signal.h>
-#include <sys/msg.h>
-#include <sys/wait.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include "chess.h"
-#define PORT 8080
-
-/*
-void gestion_erreur(int res, char* chaine){
-    if(res == -1 ){
-        printf("Erreur lors de %s \n", chaine);
-        exit(1);
-    }
-}
-
-
-
-int main(){
-    joueur j;
-    int socklist[100] ;
-    int nbSalon = 0; 
-    int creerSalon = 0;
-    int portInit = 1071;
-    while (1){
-        printf("Est ce que je cree un salon ? (1-0)");
-        scanf("%d",&creerSalon);
-        if(creerSalon){
-            int f = fork();
-            nbSalon += 1;
-            if (f == 0){
-                //pour chaque salon 
-                //côté SERVEUR_______________________________________________________
-                int dsock = socket(PF_INET, SOCK_STREAM, 0); 
-                printf("port : %d \n",portInit + nbSalon);
-                //SOCK_STREAM nous fait fonctionner en tcp
-                gestion_erreur(dsock, "socket"); //fct personnalisé
-                struct sockaddr_in ad; //lieu de stock de la socket
-                ad.sin_family = AF_INET;
-                ad.sin_addr.s_addr =  INADDR_ANY ;
-                ad.sin_port = htons((short)portInit + nbSalon) ; 
-                //le port qu'on lui donne doit être unique des autres socket en tcp
-                //le port doit être supérieur à 1024
-                int res = bind(dsock, (struct sockaddr*)&ad, sizeof(ad)) ;
-                gestion_erreur(res,"bind");
-                res = listen(dsock, 5);
-                //5 est le nombre maximum de connexion qui peuvent être misent en attente
-                gestion_erreur(res,"listen");
-                struct sockaddr_in adClient ;
-                socklen_t lgA = sizeof(struct sockaddr_in);
-                //la taille de l'adresse
-                
-                while(1){
-                    int dmec_serv = accept(dsock, (struct sockaddr *) &adClient, &lgA);
-                    gestion_erreur(dmec_serv, "accept");   // ← correction : tester dmec_serv, pas res
-
-                    char message[256];
-
-                    // Boucle recv : lit tous les messages envoyés par ce client
-                    while(1){
-                        memset(message, 0, sizeof(message));
-                        ssize_t res_ss = recv(dmec_serv, message, sizeof(message), 0);
-
-                        if(res_ss <= 0) {
-                            printf("Client déconnecté\n");
-                            break;
-                        }
-                        
-                        printf("Message reçu : %s\n", message);
-                        printf("ça continue ?\n");
-
-                        // Copie sécurisée dans coupDuTour (taille 10 max)
-                        strncpy(j.coupDuTour, message, sizeof(j.coupDuTour) - 1);
-                        
-                        printf("Coup du tour : %d\n", j.coupDuTour);
-                    }
-                    close(dmec_serv);  // ← fermer la socket client après la session
-                }
-                close(dsock);
-            }
-        }
-    }
-
-}
-*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <pthread.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <locale.h>
-#include "chess.h"
 
-void gestion_erreur(int res, char* chaine){
-    if(res == -1){
-        printf("Erreur lors de %s \n", chaine);
+#include "chess.h"
+#include "display.h"
+#include "players.h"
+
+/* ─── Utilitaire erreur ──────────────────────────────────────────────────── */
+static void gestion_erreur(int res, const char *chaine)
+{
+    if (res == -1) {
+        printf("Erreur lors de %s\n", chaine);
         exit(1);
     }
 }
 
-int main(){
-    setlocale(LC_ALL, "");  /* Unicode pour wprintf */
+/* ════════════════════════════════════════════════════════════════════════════
+ *  main  –  Serveur de jeu d'échecs
+ *
+ *  Boucle : attend un coup réseau (entier XYZW) → parse_coup → display →
+ *           player_white ou player_black selon le tour → tour suivant.
+ *
+ *  Format du coup envoyé par le client : entier 4 chiffres XYZW
+ *    XY = position source      (ligne*10 + col)
+ *    ZW = position destination (ligne*10 + col)
+ *  Exemple : 6374 = pion blanc en (6,3) va en (7,4) [notation affichée]
+ * ════════════════════════════════════════════════════════════════════════════ */
+int main(void)
+{
+    setlocale(LC_ALL, "");
 
     /* ── Initialisation du plateau ── */
     eliminated_pieces_white.start = NULL;
@@ -123,92 +42,88 @@ int main(){
     piece = (char *)malloc(sizeof(char));
     board[7][7] = 'R';
 
-    /* ── Initialisation des deux joueurs ── */
+    /* ── Initialisation des joueurs ── */
     joueur j_blanc, j_noir;
     memset(&j_blanc, 0, sizeof(joueur));
     memset(&j_noir,  0, sizeof(joueur));
     strncpy(j_blanc.Couleur, "blanc", 20);
     strncpy(j_noir.Couleur,  "noir",  20);
 
-    int nbSalon   = 0;
-    int creerSalon = 0;
-    int portInit  = 1070;
+    /* ── Création de la socket serveur ── */
+    int dsock = socket(PF_INET, SOCK_STREAM, 0);
+    gestion_erreur(dsock, "socket");
 
-    while(1){
-        printf("Est ce que je cree un salon ? (1-0) : ");
-        scanf("%d", &creerSalon);
-        if(creerSalon){
-            int f = fork();
-            nbSalon += 1;
-            if(f == 0){
-                /* ══ Processus fils : gestion d'un salon ══ */
-                int dsock = socket(PF_INET, SOCK_STREAM, 0);
-                gestion_erreur(dsock, "socket");
+    int opt = 1;
+    setsockopt(dsock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-                /* Permet de réutiliser le port immédiatement */
-                int opt = 1;
-                setsockopt(dsock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    struct sockaddr_in ad;
+    ad.sin_family      = AF_INET;
+    ad.sin_addr.s_addr = INADDR_ANY;
+    ad.sin_port        = htons(8080);
 
-                struct sockaddr_in ad;
-                ad.sin_family      = AF_INET;
-                ad.sin_addr.s_addr = INADDR_ANY;
-                ad.sin_port        = htons((short)(portInit + nbSalon));
-                printf("Salon ouvert sur le port : %d\n", portInit + nbSalon);
+    int res = bind(dsock, (struct sockaddr *)&ad, sizeof(ad));
+    gestion_erreur(res, "bind");
 
-                int res = bind(dsock, (struct sockaddr*)&ad, sizeof(ad));
-                gestion_erreur(res, "bind");
-                res = listen(dsock, 5);
-                gestion_erreur(res, "listen");
+    res = listen(dsock, 5);
+    gestion_erreur(res, "listen");
 
-                struct sockaddr_in adClient;
-                socklen_t lgA = sizeof(struct sockaddr_in);
+    printf("Serveur d'echecs en attente sur le port 8080...\n");
+    display();
 
-                int tour = 1;  /* 1 = blanc, 2 = noir */
+    struct sockaddr_in adClient;
+    socklen_t lgA = sizeof(struct sockaddr_in);
+    int tour = 1;  /* 1 = blanc, 2 = noir */
 
-                while(1){
-                    /* ── Attente d'un coup du client ── */
-                    int dmec_serv = accept(dsock, (struct sockaddr*)&adClient, &lgA);
-                    gestion_erreur(dmec_serv, "accept");
+    /* ════════════════════════════════════════════════════════════════════════
+     *  Boucle principale : chaque connexion = un coup
+     * ════════════════════════════════════════════════════════════════════════ */
+    while (1) {
+        int dmec = accept(dsock, (struct sockaddr *)&adClient, &lgA);
+        gestion_erreur(dmec, "accept");
 
-                    char message[256];
-                    memset(message, 0, sizeof(message));
-                    ssize_t res_ss = recv(dmec_serv, message, sizeof(message) - 1, 0);
+        /* ── Recevoir le coup (entier) ── */
+        int coup_recu = 0;
+        ssize_t nb = recv(dmec, &coup_recu, sizeof(coup_recu), 0);
 
-                    if(res_ss <= 0){
-                        printf("Client déconnecté\n");
-                        close(dmec_serv);
-                        break;
-                    }
-
-                    /* Supprimer le '\n' éventuel envoyé par fgets côté client */
-                    message[strcspn(message, "\n")] = '\0';
-
-                    printf("Coup reçu : \"%s\"\n", message);
-
-                    /* ── Copier le coup dans la structure du joueur concerné ── */
-                    if(tour % 2 != 0){
-                        strncpy(j_blanc.coupDuTour, message, sizeof(j_blanc.coupDuTour) - 1);
-                        /* ── Jouer le coup sur le plateau ── */
-                        system("clear");
-                        display();
-                        player_white(&j_blanc);
-                    } else {
-                        strncpy(j_noir.coupDuTour, message, sizeof(j_noir.coupDuTour) - 1);
-                        /* ── Jouer le coup sur le plateau ── */
-                        system("clear");
-                        display();
-                        player_black(&j_noir);
-                    }
-
-                    tour++;
-                    close(dmec_serv);
-                }
-
-                close(dsock);
-                free(piece);
-                exit(0);  /* fin du processus fils */
-            }
-            /* Le père reprend sa boucle pour créer d'autres salons */
+        if (nb <= 0) {
+            printf("Client déconnecté\n");
+            close(dmec);
+            continue;
         }
+
+        printf("Coup reçu : %d  (tour %d : %s)\n",
+               coup_recu, tour, (tour % 2 != 0) ? "blanc" : "noir");
+
+        /* ── Décoder le coup ── */
+        joueur *j = (tour % 2 != 0) ? &j_blanc : &j_noir;
+        j->coupDuTour = coup_recu;
+
+        int src, dst;
+        if (parse_coup(j, &src, &dst) < 0) {
+            printf("⚠ Coup invalide : %d (format attendu XYZW)\n", coup_recu);
+            close(dmec);
+            continue;
+        }
+
+        /* ── Afficher le plateau ── */
+        remove_possible_moves();
+        system("clear");
+        display();
+
+        /* ── Jouer le coup ── */
+        int ok;
+        if (tour % 2 != 0)
+            ok = player_white(&j_blanc, src, dst);
+        else
+            ok = player_black(&j_noir, src, dst);
+
+        if (ok == 0)
+            tour++;   /* coup valide → passer au tour suivant */
+
+        close(dmec);
     }
+
+    close(dsock);
+    free(piece);
+    return 0;
 }

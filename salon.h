@@ -1,18 +1,24 @@
+#ifndef SALON_H
+#define SALON_H
+
 #include "chess.h"
-#include "players.c"
-#include "moves.c"
-#include <stdlib.h>
-#include <string.h>
-// rajouter un joueur ishere // pas obligatoire ?
-typedef struct{
-    int idSalon;
+#include "players.h"
+#include "moves.h"
+
+typedef struct {
+    char CoupJoueur[100];
+} coup;
+
+typedef struct {
+    int    idSalon;
     joueur Joueur1;
     joueur Joueur2;
     joueur ListeSpectateurs[20];
-    int nbSpectateurs;
-    
-    coup ListeCoups[51];
-    int nbCoups;
+    int    nbSpectateurs;
+    coup   ListeCoups[51];
+    int    nbCoups;
+} Salon;
 
-}Salon;
+Salon *creeSalon(int id, joueur *j1, joueur *j2);
 
+#endif /* SALON_H */
