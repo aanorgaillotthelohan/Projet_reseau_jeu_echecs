@@ -4,27 +4,37 @@
 #include "chess.h"
 #include "moves.h"
 
-/* Création d'un joueur */
 joueur *creejoueur(int socket, char NomDuJoueur[20]);
 
 /*
- * parse_coup : décode j->coupDuTour (format entier XYZW)
- *   *src = ligne_départ  * 10 + col_départ
- *   *dst = ligne_arrivée * 10 + col_arrivée
+ * parse_coup : décode j->coupDuTour (XYZW, labels affichés)
+ *   *src = label_src*10 + col_src
+ *   *dst = label_dst*10 + col_dst
  * Retourne 0 si OK, -1 si invalide.
  */
 int parse_coup(joueur *j, int *src, int *dst);
 
 /*
- * Mise à jour des flags prise en passant après un coup.
+ * parse_pos : décode un entier XY (label affiché) en rangée interne + col.
+ * Retourne 0 si OK, -1 si invalide.
  */
+int parse_pos(int pos, int *r, int *c);
+
+/* Mise à jour flags prise en passant */
 void update_en_passant(char piece_moved, int r1, int r2, int c2);
 
 /*
+ * compute_moves_white / compute_moves_black
+ * Calcule les coups légaux pour la pièce en (r1,c1) RANGÉE INTERNE.
+ * Remplit possible_moves[]. Retourne 0 si OK, -1 si pas de pièce/coup.
+ */
+int compute_moves_white(int r1, int c1);
+int compute_moves_black(int r1, int c1);
+
+/*
  * player_white / player_black
- *   Reçoivent src et dst déjà décodés par parse_coup (appelé dans main).
- *   Responsabilités : calcul des coups légaux, validation, exécution.
- *   Retournent 0 si le coup a été joué, -1 sinon.
+ * src et dst en LABELS AFFICHÉS.
+ * Retourne 0 si coup joué, -1 sinon (tour non consommé).
  */
 int player_white(joueur *j, int src, int dst);
 int player_black(joueur *j, int src, int dst);
