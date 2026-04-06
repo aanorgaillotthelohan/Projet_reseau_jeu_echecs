@@ -23,15 +23,15 @@ int display_convert(char symbol)
 
 void intro(void)
 {
-    wprintf(L"     \n");
-    wprintf(L"      __ \n");
-    wprintf(L"     /  \\ \n");
-    wprintf(L"     \\__/                             _               \n");
-    wprintf(L"    /____\\             __          __| |__   ___  ___ ___            \n");
-    wprintf(L"     |__|            / __| ___   / __| '_ \\ / _ \\/ __/ __|                 \n");
-    wprintf(L"    (====)          | (__ |___| | (__| | | |  __/\\__ \\__ \\      \n");
-    wprintf(L"    }===={           \\___|       \\___|_| |_|\\___||___/___/          - Kahouli Wajd.\n");
-    wprintf(L"  (________) \n");
+    printf("     \n");
+    printf("      __ \n");
+    printf("     /  \\ \n");
+    printf("     \\__/                             _               \n");
+    printf("    /____\\             __          __| |__   ___  ___ ___            \n");
+    printf("     |__|            / __| ___   / __| '_ \\ / _ \\/ __/ __|                 \n");
+    printf("    (====)          | (__ |___| | (__| | | |  __/\\__ \\__ \\      \n");
+    printf("    }===={           \\___|       \\___|_| |_|\\___||___/___/          - Kahouli Wajd.\n");
+    printf("  (________) \n");
 }
 
 void display(void)
@@ -42,47 +42,47 @@ void display(void)
 
     display_eliminated_list(eliminated_pieces_white);
 
-    wprintf(L"    ");
-    for (i = 0; i < 8; i++) { wprintf(L"   %d", i); }
-    wprintf(L"\n");
+    printf("    ");
+    for (i = 0; i < 8; i++) { printf("   %d", i); }
+    printf("\n");
 
     for (int label = 0; label < 8; label++) {
         int k = 7 - label;
-        wprintf(L"    ");
-        for (i = 0; i < 34; i++) { wprintf(L"-"); }
-        wprintf(L"\n %d  ", label);
+        printf("    ");
+        for (i = 0; i < 34; i++) { printf("-"); }
+        printf("\n %d  ", label);
         for (j = 0; j < 8; j++) {
-            wprintf(L"||%lc ", (wchar_t)display_convert(board[k][j]));
+            printf("||%lc ", (wchar_t)display_convert(board[k][j]));
         }
-        wprintf(L"||\n");
+        printf("||\n");
     }
-    wprintf(L"    ");
-    for (i = 0; i < 34; i++) { wprintf(L"-"); }
-    wprintf(L"\n");
+    printf("    ");
+    for (i = 0; i < 34; i++) { printf("-"); }
+    printf("\n");
 
     display_eliminated_list(eliminated_pieces_black);
-    wprintf(L"\n");
+    printf("\n");
 }
 
 void display_possible_moves(char b[8][8])
 {
     int i, j, k;
-    wprintf(L" ");
-    for (i = 0; i < 8; i++) { wprintf(L"   %d", i); }
-    wprintf(L"\n");
+    printf(" ");
+    for (i = 0; i < 8; i++) { printf("   %d", i); }
+    printf("\n");
 
     for (k = 0; k < 8; k++) {
-        wprintf(L"  ");
-        for (i = 0; i < 34; i++) { wprintf(L"-"); }
-        wprintf(L"\n%d ", k);
+        printf("  ");
+        for (i = 0; i < 34; i++) { printf("-"); }
+        printf("\n%d ", k);
         for (j = 0; j < 8; j++) {
-            wprintf(L"||%lc ", (wchar_t)display_convert(b[k][j]));
+            printf("||%lc ", (wchar_t)display_convert(b[k][j]));
         }
-        wprintf(L"||\n");
+        printf("||\n");
     }
-    wprintf(L"  ");
-    for (i = 0; i < 34; i++) { wprintf(L"-"); }
-    wprintf(L"\n");
+    printf("  ");
+    for (i = 0; i < 34; i++) { printf("-"); }
+    printf("\n");
 }
 
 void append_possible_moves(void)

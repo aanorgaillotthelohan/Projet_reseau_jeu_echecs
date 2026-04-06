@@ -19,7 +19,7 @@ int parse_coup(joueur *j, int *src, int *dst);
  * Retourne 0 si OK, -1 si invalide.
  */
 int parse_pos(int pos, int *r, int *c);
-
+    
 /* Mise à jour flags prise en passant */
 void update_en_passant(char piece_moved, int r1, int r2, int c2);
 
