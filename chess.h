@@ -27,6 +27,8 @@ typedef struct {
     bool rejoinsSalon;
     char message[128];
     int  coupDuTour;
+    bool premier;
+
 } joueur;
 
 /* ─── Variables globales ─────────────────────────────────────────────────── */

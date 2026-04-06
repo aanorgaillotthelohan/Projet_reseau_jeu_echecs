@@ -87,13 +87,14 @@ static void affiche_plateau_recu(const Message *m)
     for (int i = 0; i < nb_b && pos < MSG_DATA_MAX; i++, pos++)
         insert_eliminated_list((char)m->data[pos], &eliminated_pieces_black);
 
+
     display();
 }
 
 /* ─── Affiche les coups reçus et les marque sur le plateau local ─────────── */
 static void affiche_coups_recus(const Message *m, int src)
 {
-    printf("\u25B6 Cases disponibles pour la piece en %d :\n  ", src);
+    printf("\u25B6 Coup(s) possible(s) avec cette pièce %d :\n  ", src);
 
     /* Marquer les cases sur le plateau local */
     for (int i = 0; i < m->nb; i++) {
@@ -107,7 +108,7 @@ static void affiche_coups_recus(const Message *m, int src)
     printf("\n");
     display();
 
-    printf("\u25B6 Cases disponibles pour la piece en %d :\n  ", src);
+    printf("\u25B6 Coup(s) possible(s) avec cette pièce %d :\n  ", src);
     for (int i = 0; i < m->nb; i++)
         printf("[%d%d] ", m->data[i] / 10, m->data[i] % 10);
     printf("\n");
@@ -137,7 +138,7 @@ static int tour_client(int sock, int player_id)
         efface_marqueurs();
         display();
 
-        printf("\n\u25CF %s — Selectionnez votre piece (ex: 11) : ", couleur);
+        printf("\n\u25CF %s — Selectionnez la pièce à jouer, suivre le format ligne puis colonne (ex: 11): ", couleur);
         fflush(stdout);
 
         int src = -1;
@@ -185,7 +186,7 @@ static int tour_client(int sock, int player_id)
             continue;
         }
 
-        /* ── Envoyer le coup au serveur ── */
+
         memset(&msg_out, 0, sizeof(msg_out));
         msg_out.type    = MSG_JOUER_COUP;
         msg_out.data[0] = src;
@@ -193,17 +194,17 @@ static int tour_client(int sock, int player_id)
         msg_out.nb      = 2;
         if (send_msg(sock, &msg_out) < 0) return -1;
 
-        /* ── Lire les réponses du serveur jusqu'à MSG_ETAT_PLATEAU ── */
+
         while (1) {
             if (recv_msg(sock, &msg_in) < 0) return -1;
 
             if (msg_in.type == MSG_COUP_INVALIDE) {
                 printf("\u26A0 Coup invalide, reessayez.\n");
                 printf("Appuyez sur Entree...\n"); flush_stdin();
-                break;   /* retour à l'étape 1 */
+                break;   
             }
             if (msg_in.type == MSG_COUP_OK) {
-                continue;   /* attendre MSG_ETAT_PLATEAU */
+                continue;   // attendre MSG_ETAT_PLATEAU 
             }
             if (msg_in.type == MSG_ECHEC_BLANC) {
                 printf("\n\u26A0\u26A0  ECHEC AU ROI BLANC !  \u26A0\u26A0\n");
@@ -217,7 +218,7 @@ static int tour_client(int sock, int player_id)
                 efface_marqueurs();
                 affiche_plateau_recu(&msg_in);
                 printf("\u2705 Coup joue : %d -> %d\n", src, dst);
-                return 0;   /* tour terminé */
+                return 0;   // tour terminé 
             }
         }
         /* Si on arrive ici c'est un coup invalide → on reboucle */
@@ -258,17 +259,18 @@ int main(int argc, char **argv)
 
     Message msg;
 
-    /* ════════════════════════════════════════════════════════════════════════
-     *  Boucle principale : reçoit MSG_ETAT_PLATEAU + MSG_VOTRE_TOUR,
-     *  joue le tour, recommence.
-     * ════════════════════════════════════════════════════════════════════════ */
     while (1) {
         /* Recevoir l'état du plateau */
         if (recv_msg(sock, &msg) < 0) {
             printf("Connexion perdue.\n");
             break;
         }
-
+        if (msg.type == MSG_BLANC){
+            printf("Couleur de cette partie : Blanc");
+        }
+        if (msg.type == MSG_NOIR){
+            printf("Couleur de cette partie : Noir");
+        }
         if (msg.type == MSG_ETAT_PLATEAU) {
             affiche_plateau_recu(&msg);
             printf("affichage réussi\n");
