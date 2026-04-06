@@ -5,7 +5,7 @@
 
 bool VerifIdentifiant(char *idJoueur);
 bool VerifConnexion(char *idJoueur, char *Mdp);
-void Inscription(char *idJoueur, char *Mdp);
+int Inscription(char *idJoueur, char *Mdp);
 char ChoixConnexionNonReconnu();
 
 #endif

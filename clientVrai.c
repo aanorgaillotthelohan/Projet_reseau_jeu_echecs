@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <unistd.h>
-#include <netinet/in.h>
+#include <pthread.h>
+#include <sys/socket.h>
 #include <arpa/inet.h>
 #include <ctype.h>
 #include "application.h"
@@ -14,110 +14,170 @@ typedef struct {
     char Mdp[128];
 } MessageClient;
 
+int dsock_mec;
+volatile int enRecherche = 0;
+
+// Thread pour écouter le serveur
+void* listener(void* arg){
+    while(1){
+        if(enRecherche){
+            int matchTrouve = 0;
+            ssize_t r = recv(dsock_mec, &matchTrouve, sizeof(matchTrouve), 0);
+            if(r <= 0){
+                printf("\nDéconnecté du serveur.\n");
+                exit(1);
+            }
+            if(matchTrouve == 1){
+                printf("\n=== Match trouvé ! ===\n");
+                enRecherche = 0;
+            }
+        } else {
+            usleep(100000); // 0.1s pause pour ne pas surcharger le CPU
+        }
+    }
+    return NULL;
+}
+
 void gestion_erreur(int res, char* chaine){
-    if(res == -1 ){
-        printf("Erreur lors de %s \n", chaine);
+    if(res == -1){
+        perror(chaine);
         exit(1);
     }
 }
 
 int main(int argc, char **argv){
-
     if(argc < 2){
         printf("Usage: %s <port>\n", argv[0]);
-        exit(1);
+        return 1;
     }
 
-    int dsock_mec = socket(PF_INET, SOCK_STREAM, 0);
+    dsock_mec = socket(PF_INET, SOCK_STREAM, 0);
     gestion_erreur(dsock_mec, "socket");
 
-    struct sockaddr_in adServ ;
-    adServ.sin_family = AF_INET ;
-    adServ.sin_port = htons(atoi(argv[1])) ;
-    inet_pton(AF_INET, "127.0.0.1", &(adServ.sin_addr)) ;
+    struct sockaddr_in adServ;
+    adServ.sin_family = AF_INET;
+    adServ.sin_port = htons(atoi(argv[1]));
+    inet_pton(AF_INET, "127.0.0.1", &adServ.sin_addr);
 
-    gestion_erreur(connect(dsock_mec, (struct sockaddr *) &adServ, sizeof(adServ)), "connect");
+    gestion_erreur(connect(dsock_mec, (struct sockaddr*)&adServ, sizeof(adServ)), "connect");
+
+    pthread_t tid;
+    pthread_create(&tid, NULL, listener, NULL);
+    pthread_detach(tid);
 
     char idJoueur[128], Mdp[128];
     char choix;
-    bool JeuEnCour = true;
+    int connecte = 0;
+    int jeuEnCours = 1;
 
-    printf("Vous quitter le jeu a tout moment en apuyant sur ! (! = quitter) : "); 
-    while(JeuEnCour){
-        printf("Voulez vous vous connecter ou vous inscrire (c = connexion / i = inscription) : ");
-        scanf(" %c", &choix);
-        choix = tolower(choix);
+    printf("Vous pouvez quitter avec '!'\n");
 
-        if(choix == '!'){
-            JeuEnCour = false;
-            break;
-        }
-        else if(choix == 'i'){
-            Inscription(idJoueur, Mdp);
-        } 
-        else if(choix == 'c'){
-            printf("Saisir identifiant : ");
-            scanf("%s", idJoueur);
-            printf("Saisir mot de passe : ");
-            scanf("%s", Mdp);
+    while(jeuEnCours){
 
-            if(!VerifConnexion(idJoueur, Mdp)){
-                char ch = ChoixConnexionNonReconnu();
-                if(ch == 'i'){
-                    Inscription(idJoueur, Mdp);
-                }
-            }
-        } else {
-            printf("Choix invalide\n");
-            close(dsock_mec);
-            exit(1);
-        }
-
-        MessageClient msg;
-        msg.choix = choix;
-        strcpy(msg.idJoueur, idJoueur);
-        strcpy(msg.Mdp, Mdp);
-
-        send(dsock_mec, &msg, sizeof(msg), 0);
-
-        char rep;
-        recv(dsock_mec, &rep, sizeof(rep), 0);
-
-        if(rep == 1){
-            printf("Validation serveur OK\n");
-        }else{
-            printf("Refus serveur\n");
-        }
-
-        char choixValid = 0;
-
-        while(!choixValid){
-            printf("Souhaitez-vous Jouer, être spectateur ou regarder votre historique ? (j = Jouer / s = Spectateur / h = historique) : ");
+        // Phase connexion/inscription
+        while(!connecte){
+            printf("Connexion / Inscription (c/i) : ");
             scanf(" %c", &choix);
             choix = tolower(choix);
-            if(choix =='!'){
-                JeuEnCour = false;
+
+            if(choix == '!'){
+                jeuEnCours = 0;
                 break;
-            } else if(choix == 'j' || choix == 's' || choix == 'h'){
-                choixValid = 1;
-            } else {
-                printf("Choix invalide. Veuillez saisir uniquement j, s ou h.\n");
+            }
+
+            if(choix == 'i'){
+                int rep;
+                printf("Identifiant : "); scanf("%s", idJoueur);
+                printf("Mot de passe : "); scanf("%s", Mdp);
+
+                MessageClient msg = {'i', "", ""};
+                strcpy(msg.idJoueur, idJoueur);
+                strcpy(msg.Mdp, Mdp);
+
+                send(dsock_mec, &msg, sizeof(msg), 0);
+                recv(dsock_mec, &rep, sizeof(rep), 0);
+
+                if(rep == 1){
+                    printf("Inscription réussie ! Connecté.\n");
+                    connecte = 1;
+                } else {
+                    printf("Identifiant déjà pris.\n");
+                }
+            }
+            else if(choix == 'c'){
+                printf("Identifiant : "); scanf("%s", idJoueur);
+                printf("Mot de passe : "); scanf("%s", Mdp);
+
+                MessageClient msg = {'c', "", ""};
+                strcpy(msg.idJoueur, idJoueur);
+                strcpy(msg.Mdp, Mdp);
+
+                send(dsock_mec, &msg, sizeof(msg), 0);
+                int rep = 0;
+                recv(dsock_mec, &rep, sizeof(rep), 0);
+                if(rep == 1){
+                    printf("Connecté !\n");
+                    connecte = 1;
+                } else {
+                    printf("Erreur de connexion.\n");
+                }
+            }
+            else {
+                printf("Choix invalide.\n");
             }
         }
-        if(choix == '!'){
-            JeuEnCour = false;
-            break;
+
+        if(!jeuEnCours) break;
+
+        // Menu principal
+        char choixValid = 0;
+        
+        while(!choixValid){
+            printf("Choix (j=jouer / s=spectateur / h=historique / !=quitter) : ");
+            scanf(" %c", &choix);
+            choix = tolower(choix);
+
+            if(choix == '!'){
+                jeuEnCours = 0;
+                break;
+            } 
+            else if(choix == 'j' || choix == 's' || choix == 'h'){
+                choixValid = 1;
+            } 
+            else {
+                printf("Choix invalide\n");
+            }
         }
-        else if(choix == 'j'){
-            // lancer le jeu
+
+        if(!jeuEnCours) break;
+
+        MessageClient msg = {choix, "", ""};
+        strcpy(msg.idJoueur, idJoueur);
+        send(dsock_mec, &msg, sizeof(msg), 0);
+
+        if(choix == 'j'){
+            printf("Recherche de partie... (appuyez sur 'r' + Entrée pour annuler)\n");
+            enRecherche = 1;
+
+            char input[16];
+            while(enRecherche){
+                if(fgets(input, sizeof(input), stdin)){
+                    if(tolower(input[0]) == 'r'){
+                        printf("Recherche annulée.\n");
+                        enRecherche = 0;
+                        break;
+                    }
+                }
+            }
         }
-        else if (choix == 's'){
-            // mode spectateur
+        else if(choix == 's'){
+            printf("Mode spectateur non implémenté.\n");
         }
         else if(choix == 'h'){
-            // afficher historique
+            printf("Historique non implémenté.\n");
         }
     }
 
     close(dsock_mec);
+    return 0;
 }
