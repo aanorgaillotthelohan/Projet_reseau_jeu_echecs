@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,12 +16,12 @@
 #include <arpa/inet.h>
 
 
-#define NB_MAX 5
+#define NB_MAX 20
 struct sockaddr_in liste_clients[NB_MAX];
 int nb_cli = 0;
 
 int connait_client(struct sockaddr_in * cli){
-    for (int i=0; i<nb_cli ; i++){
+    for (int i = 0; i < nb_cli; i++){
         if (liste_clients[i].sin_addr.s_addr == cli->sin_addr.s_addr &&
             liste_clients[i].sin_port == cli->sin_port)
             return i;
@@ -44,14 +43,13 @@ struct chat_arg{
 };
 
 
-//fonction pour le test de chat en thread
-
-void chat(void * arg){
+// Fonction pour le test de chat en thread
+void * chat(void * arg){
     int dschat = ((struct chat_arg*)arg)->ds;
-    //on est en udp donc on peut utiliser le même port que le tcp du processus principal
-    printf("port du chat : %d \n",((struct chat_arg*)arg)->port + ((struct chat_arg*)arg)->nb);
-    //SOCK_STREAM nous fait fonctionner en tcp
-    //5 est le nombre maximum de connexion qui peuvent être misent en attente
+    // On est en UDP donc on peut utiliser le même port que le TCP du processus principal
+    printf("port du chat : %d \n", ((struct chat_arg*)arg)->port + ((struct chat_arg*)arg)->nb);
+    // SOCK_STREAM nous fait fonctionner en TCP
+    // 5 est le nombre maximum de connexion qui peuvent être mises en attente
 
     socklen_t lgA = sizeof(struct sockaddr_in);
     char messagechat[128]; 
@@ -59,23 +57,26 @@ void chat(void * arg){
     int chat_actif = 1;
     char stockmessage[10][128];
     int position_message = 0;
+
     while(chat_actif){
-        //recoit sueulement du mec qui est concerné par dschat, il faudrait une liste pour avoir tout le monde...
-        int reschat = recvfrom(dschat, &messagechat, sizeof(messagechat), 0, &adClient,&lgA);
-        gestion_erreur(reschat,"chat res");
+        // Reçoit seulement du mec qui est concerné par dschat, il faudrait une liste pour avoir tout le monde...
+        ssize_t reschat = recvfrom(dschat, messagechat, sizeof(messagechat), 0, (struct sockaddr*)&adClient, &lgA);
+        gestion_erreur((int)reschat, "chat res");
 
         if (strcmp(messagechat, "f") == 0){
-            printf("strcmp \n");
+            printf("Un chatteur est parti \n");
             int p = connait_client(&adClient);
-            nb_cli--;
-            for(int i = p; i<nb_cli; i++){
-                liste_clients[i]=liste_clients[i+1];
+            if (p != -1) {
+                nb_cli--;
+                for(int i = p; i < nb_cli; i++){
+                    liste_clients[i] = liste_clients[i+1];
+                }
             }
         }
         else{
-            //printf("message : %s\n",messagechat);
-            //met le message dans la liste
-            strcpy(stockmessage[position_message] , messagechat);
+            // printf("message : %s\n",messagechat);
+            // Met le message dans la liste
+            strcpy(stockmessage[position_message], messagechat);
             if (position_message < 10){
                 position_message += 1;
             }
@@ -87,24 +88,21 @@ void chat(void * arg){
                 strcpy(stockmessage[9], messagechat);
             }
             if(connait_client(&adClient) == -1){
-                if (nb_cli <NB_MAX){
+                if (nb_cli < NB_MAX){
                     liste_clients[nb_cli] = adClient;
-                    nb_cli ++;
-                    printf("Client ajouté dans chat à la place %d \n",nb_cli-1);
+                    nb_cli++;
+                    printf("Client ajouté dans chat à la place %d \n", nb_cli-1);
                 }
                 else{
                     printf("Client rejeté par manque de place.\n");
                 }
             }
 
-            for(int i=0; i<nb_cli ; i++){
-                ssize_t res_udp = sendto(dschat,stockmessage,sizeof(stockmessage),0,&liste_clients[i],lgA);
-                gestion_erreur(res_udp,"sendto udp chat");
+            for(int i = 0; i < nb_cli; i++){
+                ssize_t res_udp = sendto(dschat, stockmessage, sizeof(stockmessage), 0, (struct sockaddr*)&liste_clients[i], lgA);
+                gestion_erreur((int)res_udp, "sendto udp chat");
             }
         }
-
-
-
     }
 }
 
@@ -114,74 +112,76 @@ int main(){
     int creerSalon = 0;
     int chat_deja_creer = 0;
     int portInit = 1082;
-    int portInitChat = 1275;
     pthread_t chat_t;
+    
     while (1){
         printf("Est ce que je cree un salon ? (1-0)\n");
-        scanf("%d",&creerSalon);
+        scanf("%d", &creerSalon);
+        
         if(creerSalon){
             int f = fork();
             nbSalon += 1;
+            
             if (f == 0){
-                //pour chaque salon __________________________________________
+                // Pour chaque salon __________________________________________
                 int dsock = socket(PF_INET, SOCK_STREAM, 0); 
-                printf("port : %d \n",portInit + nbSalon);
-                //SOCK_STREAM nous fait fonctionner en tcp
-                gestion_erreur(dsock, "socket"); //fct personnalisé
-                struct sockaddr_in ad; //lieu de stock de la socket
+                printf("port : %d \n", portInit + nbSalon);
+                // SOCK_STREAM nous fait fonctionner en TCP
+                gestion_erreur(dsock, "socket"); // fct personnalisé
+                struct sockaddr_in ad; // lieu de stock de la socket
                 ad.sin_family = AF_INET;
                 ad.sin_addr.s_addr =  INADDR_ANY ;
-                ad.sin_port = htons((short)portInit + nbSalon) ; 
-                //le port qu'on lui donne doit être unique des autres socket en tcp
-                //le port doit être supérieur à 1024
-                int res = bind(dsock, (struct sockaddr*)&ad, sizeof(ad)) ;
-                gestion_erreur(res,"bind");
+                ad.sin_port = htons((short)(portInit + nbSalon)); 
+                // le port qu'on lui donne doit être unique des autres socket en tcp
+                // le port doit être supérieur à 1024
+                int res = bind(dsock, (struct sockaddr*)&ad, sizeof(ad));
+                gestion_erreur(res, "bind");
 
                 res = listen(dsock, 5);
-                //5 est le nombre maximum de connexion qui peuvent être misent en attente, listen, n'est utilisé que par le tcp
-                gestion_erreur(res,"listen");
+                // 5 est le nombre maximum de connexion qui peuvent être mises en attente, listen, n'est utilisé que par le tcp
+                gestion_erreur(res, "listen");
 
-                //crée la socket pour le udp duc chat
+                // Crée la socket pour le UDP du chat
                 int dsockUdp = socket(PF_INET, SOCK_DGRAM, 0);
-                res = bind(dsockUdp, (struct sockaddr*)&ad, sizeof(ad)) ;
-                gestion_erreur(res,"bind Udp");
+                res = bind(dsockUdp, (struct sockaddr*)&ad, sizeof(ad));
+                gestion_erreur(res, "bind Udp");
 
-                struct sockaddr_in adClient ;
-                //la taille de l'adresse
+                struct sockaddr_in adClient;
+                // la taille de l'adresse
                 socklen_t lgA = sizeof(struct sockaddr_in);
                 struct chat_arg arg;
                 arg.port = portInit;
                 arg.nb = nbSalon;
                 arg.ds = dsockUdp;
-                pthread_create(&chat_t, 0, chat, &arg);      
+                pthread_create(&chat_t, NULL, chat, &arg);      
 
                 while(1){
-                    int dmec_serv = accept(dsock, (struct sockaddr *) &adClient, &lgA);
-                    //on accepte la connexion du premier venu
-                    gestion_erreur(res,"accept");
-                    //on répond à sa requête. avec recv et send:
+                    int dmec_serv = accept(dsock, (struct sockaddr *)&adClient, &lgA);
+                    // on accepte la connexion du premier venu
+                    gestion_erreur(dmec_serv, "accept"); // Correction : utiliser dmec_serv au lieu de res ici
+                    
+                    // on répond à sa requête. avec recv et send:
                     int message[10];
                     
-                    //ATTENTION au descripteur mit, ce n'est pas celui du serveur!
+                    // ATTENTION au descripteur mis, ce n'est pas celui du serveur!
                     ssize_t res_ss = recv(dmec_serv, message, sizeof(message), 0);
-                    //on recoit le message dans message.
-                    gestion_erreur(res_ss,"recv");
+                    // on recoit le message dans message.
+                    gestion_erreur((int)res_ss, "recv");
                     
                     printf("je suis %d\n", portInit + nbSalon);
                     printf("On recoit ");
-                    for (int i = 0; i <10; i++){
-                        printf(",%d ",message[i]);
+                    for (int i = 0; i < 10; i++){
+                        printf(",%d ", message[i]);
                     }
                     printf("\n");
                     /*
                     res_ss = send(dsock, message, sizeof(message), 0) ;
-                    gestion_erreur(res_ss,"send");
+                    gestion_erreur(res_ss, "send");
                     */
                 }
                 close(dsock);
-                pthread_join(chat_t, 0);
+                pthread_join(chat_t, NULL);
             }
         }
     }
-
 }
