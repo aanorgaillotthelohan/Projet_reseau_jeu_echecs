@@ -13,7 +13,8 @@ bool VerifIdentifiant(char *idJoueur){
     char ligne[256];
 
     if (fp == NULL){
-        return true; // fichier inexistant → pseudo disponible
+        printf("Erreur problème de fichier des données");
+        return false; // fichier inexistant → pseudo disponible
     }
 
     while(fgets(ligne, sizeof(ligne), fp) != NULL){
@@ -49,23 +50,32 @@ bool VerifConnexion(char *idJoueur, char *Mdp){
     return false;
 }
 
-// Inscription
-void Inscription(char *idJoueur, char *Mdp){
-    FILE *fp = fopen("HistoJoueur.txt", "a+");
-    if (fp == NULL) return;
-
-    printf("Saisir son identifiant : ");
-    scanf(" %s", idJoueur);
-    while(!VerifIdentifiant(idJoueur)){
-        printf("Identifiant déjà pris\nSaisir un nouveau : ");
-        scanf(" %s", idJoueur);
+int Inscription(char *idJoueur, char *Mdp){
+    // Vérifie si identifiant déjà pris
+    FILE *fp = fopen("HistoJoueur.txt", "r");
+    if (fp != NULL){
+        char line[256];
+        while(fgets(line, sizeof(line), fp)){
+            char existingId[128];
+            sscanf(line, "%s", existingId);
+            if(strcmp(existingId, idJoueur) == 0){
+                fclose(fp);
+                return 0; // échec
+            }
+        }
+        fclose(fp);
     }
 
-    printf("Saisir son mot de passe : ");
-    scanf(" %s", Mdp);
+    // Ajoute le nouveau joueur
+    fp = fopen("HistoJoueur.txt", "a");
+    if(fp != NULL){
+        fprintf(fp, "%s %s\n", idJoueur, Mdp);
+        fclose(fp);
+        printf("Nouvel utilisateur inscrit : %s\n", idJoueur);
+        return 1; // succès
+    }
 
-    fprintf(fp, "%s %s\n", idJoueur, Mdp);
-    fclose(fp);
+    return 0; // échec si fichier inaccessible
 }
 
 // Choix après identifiant non reconnu
