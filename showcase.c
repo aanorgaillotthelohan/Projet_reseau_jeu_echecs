@@ -1,4 +1,7 @@
-#include "chess.h"
+#include "showcase.h"
+#include "display.h"
+#include "moves.h"
+#include "utils.h"
 
 void showcase_board(char row, char col, char new_row, char new_col, int id)
 {
@@ -8,11 +11,9 @@ void showcase_board(char row, char col, char new_row, char new_col, int id)
     int c2 = (int)(new_col - '0');
 
     if (r1 == 0 && c1 == 0 && r2 == 0 && c2 == 0 && id == 2) {
-        /* Roque côté roi blanc */
         change(7, 4, 7, 6, 2);
         change(7, 7, 7, 5, 2);
     } else if (r1 == 0 && c1 == 0 && r2 == 0 && c2 == 0 && id == 1) {
-        /* Roque côté roi noir */
         change(0, 4, 0, 2, 1);
         change(0, 0, 0, 3, 1);
     } else {

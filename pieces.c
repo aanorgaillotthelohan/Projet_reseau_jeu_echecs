@@ -1,6 +1,6 @@
-#include "chess.h"
+#include "pieces.h"
+#include "display.h"
 
-/* Crée un nœud pour une pièce éliminée */
 eliminated_piece *create_piece(char value)
 {
     eliminated_piece *p = (eliminated_piece *)malloc(sizeof(eliminated_piece));
@@ -11,7 +11,6 @@ eliminated_piece *create_piece(char value)
     return p;
 }
 
-/* Insère une pièce éliminée en fin de liste */
 void insert_eliminated_list(char value, eliminated_pieces_list *l)
 {
     eliminated_piece *piece = create_piece(value);
@@ -24,7 +23,6 @@ void insert_eliminated_list(char value, eliminated_pieces_list *l)
     }
 }
 
-/* Affiche toutes les pièces éliminées d'une liste */
 void display_eliminated_list(eliminated_pieces_list l)
 {
     eliminated_piece *temp = l.start;
