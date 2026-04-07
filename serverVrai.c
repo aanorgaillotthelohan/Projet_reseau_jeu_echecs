@@ -28,6 +28,30 @@ int NbSalons = 0;
 
 pthread_mutex_t mutexJoueurs = PTHREAD_MUTEX_INITIALIZER;
 
+void retirer_joueur_file(int sockClient){
+    pthread_mutex_lock(&mutexJoueurs);
+
+    int index = -1;
+
+    for(int i = debut; i < fin; i++){
+        if(JoueursEnAttente[i].socketJoueur == sockClient){
+            index = i;
+            break;
+        }
+    }
+
+    if(index != -1){
+        for(int i = index; i < fin - 1; i++){
+            JoueursEnAttente[i] = JoueursEnAttente[i + 1];
+        }
+        fin--;
+
+        printf("Joueur retiré de la file\n");
+    }
+
+    pthread_mutex_unlock(&mutexJoueurs);
+}
+
 // Fonction pour gérer un client
 void* gestion_client(void* arg){
     int sockClient = *(int*)arg;
@@ -38,13 +62,18 @@ void* gestion_client(void* arg){
         ssize_t r = recv(sockClient, &msg, sizeof(msg), 0);
         if(r <= 0){
             printf("Client déconnecté\n");
+            retirer_joueur_file(sockClient);
             close(sockClient);
             return NULL;
         }
 
         int rep = 0;
-
-        if(msg.choix == 'i'){ // Inscription
+        if(msg.choix == '!'){
+            retirer_joueur_file(sockClient);
+            close(sockClient);
+            return NULL;
+        }
+        else if(msg.choix == 'i'){ // Inscription
             rep = Inscription(msg.idJoueur, msg.Mdp);
             send(sockClient, &rep, sizeof(rep), 0);
         }

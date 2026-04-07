@@ -32,7 +32,7 @@ void* listener(void* arg){
                 enRecherche = 0;
             }
         } else {
-            usleep(100000); // 0.1s pause pour ne pas surcharger le CPU
+            usleep(100000);
         }
     }
     return NULL;
@@ -139,6 +139,7 @@ int main(int argc, char **argv){
 
             if(choix == '!'){
                 jeuEnCours = 0;
+                send(dsock_mec, &choix, sizeof(choix), 0);
                 break;
             } 
             else if(choix == 'j' || choix == 's' || choix == 'h'){
