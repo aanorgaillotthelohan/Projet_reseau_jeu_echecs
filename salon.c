@@ -4,26 +4,17 @@
 #include <string.h>
 
 
-Salon* creeSalon(int id, joueur* j1, joueur* j2){
+Salon *creeSalon(int id, joueur *j1, joueur *j2)
+{
+    Salon *s = malloc(sizeof(Salon));
+    if (s == NULL) return NULL;
 
-    Salon* s = malloc(sizeof(Salon));
-
-    if(s == NULL)
-        return NULL;
-
-    s->idSalon = id;
-
-    // copie des joueurs (inclut socket, nom, etc.)
-    s->Joueur1 = *j1;
-    s->Joueur2 = *j2;
-
+    s->idSalon       = id;
+    s->Joueur1       = *j1;
+    s->Joueur2       = *j2;
     s->nbSpectateurs = 0;
-    s->nbCoups = 0;
+    s->nbCoups       = 0;
 
-    // initialisation des coups
-    for(int i = 0; i < 51; i++){
-        s->ListeCoups[i] = 0;
-    }
     return s;
 }
 
