@@ -12,27 +12,20 @@
 #include "display.h"
 #include "pieces.h"
 #include "protocol.h"
+#include "application.h"
+void gestion_erreur(int res, char* chaine){
+    if(res == -1 ){
+        printf("Erreur lors de %s \n", chaine);
+        exit(1);
+    }
+}
 
-/*
- * clien_ex_salon.c — Client d'échecs intelligent.
- *
- * Le client :
- *   - reçoit le plateau du serveur et l'affiche localement
- *   - gère la saisie en 2 temps (source puis destination)
- *   - envoie MSG_DEMANDE_COUPS pour obtenir les cases accessibles
- *   - envoie MSG_JOUER_COUP pour jouer
- *   - ne contient aucune logique de jeu (tout est côté serveur)
- *
- * Usage : ./client <port>
- */
-
-/* ─── Utilitaire erreur ──────────────────────────────────────────────────── */
 static void gestion_erreur(int res, const char *chaine)
 {
     if (res == -1) { perror(chaine); exit(1); }
 }
 
-/* ─── Envoi / réception fiables ─────────────────────────────────────────── */
+
 static int send_msg(int sock, const Message *m)
 {
     ssize_t total = 0;
@@ -91,7 +84,7 @@ static void affiche_plateau_recu(const Message *m)
     display();
 }
 
-/* ─── Affiche les coups reçus et les marque sur le plateau local ─────────── */
+
 static void affiche_coups_recus(const Message *m, int src)
 {
     printf("\u25B6 Coup(s) possible(s) avec cette pièce %d :\n  ", src);

@@ -305,6 +305,7 @@ int main(void){
         nbr_co++;
         gestion_erreur(dmec, "accept");
         printf("Premier client connecté\n");
+        
         int dmec_bis = accept(dsock, (struct sockaddr *)&adClient, &lgA);
         nbr_co++;
         gestion_erreur(dmec_bis, "accept");

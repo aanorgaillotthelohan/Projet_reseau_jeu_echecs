@@ -53,7 +53,7 @@ void retirer_joueur_file(int sockClient){
 }
 
 // Fonction pour gérer un client
-void* gestion_client(void* arg){
+void* gestion_client(void* arg ){
     int sockClient = *(int*)arg;
     free(arg);
 
