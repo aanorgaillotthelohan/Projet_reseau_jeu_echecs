@@ -6,8 +6,8 @@ CLIENT  = client
 SERVER  = server
 
 # Sources
-CLIENT_SRCS = globals.c utils.c display.c pieces.c moves.c players.c salon.c application.c clientVrai.c
-SERVER_SRCS = globals.c utils.c display.c pieces.c moves.c players.c salon.c application.c serverVrai.c
+CLIENT_SRCS = globals.c utils.c display.c pieces.c moves.c players.c salon.c application.c client.c
+SERVER_SRCS = globals.c utils.c display.c pieces.c moves.c players.c salon.c application.c serveur.c
 
 # Objets
 CLIENT_OBJS = $(CLIENT_SRCS:.c=.o)

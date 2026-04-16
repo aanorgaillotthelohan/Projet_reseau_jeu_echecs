@@ -48,4 +48,10 @@ typedef struct {
 
 } Message;
 
+typedef struct {
+  int sock_1;
+  int sock_2;
+} Args_gerepartie; // permet de stocker les arguments nécessaires pour utiliser gerepartie
+
+
 #endif 
