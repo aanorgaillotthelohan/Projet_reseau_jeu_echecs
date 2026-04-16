@@ -246,13 +246,11 @@ static void *gestion_client(void *arg) {
             joueur *j = creejoueur(sockClient, msg.idJoueur);
             pthread_mutex_lock(&mutexJoueurs);
             if (fin < MAX_CLIENTS) JoueursEnAttente[fin++] = *j;
-            free(j);
-
+            
             if (fin - debut >= 2) {
                 joueur j1 = JoueursEnAttente[debut];
                 joueur j2 = JoueursEnAttente[debut + 1];
                 debut += 2;
-
                 NbSalons++;
                 creeSalon(NbSalons, &j1, &j2);
                 
@@ -269,10 +267,11 @@ static void *gestion_client(void *arg) {
                 pthread_detach(t);
             }
             pthread_mutex_unlock(&mutexJoueurs);
+            free(j);
+            // CRITIQUE : On quitte ce thread pour ne plus interférer avec gere_partie
+            return NULL; 
         }
     }
-    retirer_joueur_file(sockClient);
-    close(sockClient);
     return NULL;
 }
 

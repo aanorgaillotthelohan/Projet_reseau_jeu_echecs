@@ -104,6 +104,8 @@ static void affiche_coups_recus(const Message *m, int src) {
 }
 
 /* ─── Gestion du Tour ───────────────────────────────────────────────────── */
+// --- Dans client.c ---
+
 static int tour_client(int sock, int player_id) {
     const char *couleur = (player_id == 1) ? "Blanc" : "Noir";
     Message msg_out, msg_in;
@@ -112,82 +114,55 @@ static int tour_client(int sock, int player_id) {
         efface_marqueurs();
         display();
         printf("\n\u25CF Tour des %s \u25CF\n", couleur);
-        printf("\n\u25CF %s — Pièce (ex: 11) ou 0 pour quitter : ", couleur);
+        printf("Pièce (ex: 11) ou 0 pour quitter : ");
         
         int src;
-        if (scanf("%d", &src) != 1) {
-            printf("coordonnées invalides réessai"); 
-            flush_stdin(); 
-            continue; }
+        if (scanf("%d", &src) != 1) { flush_stdin(); continue; }
         if (src == 0) return -1;
 
+        // 1. Demander les coups possibles
         msg_out.type = MSG_DEMANDE_COUPS;
         msg_out.data[0] = src;
         msg_out.nb = 1;
         if (send_msg(sock, &msg_out) < 0) return -1;
 
+        // Attendre la réponse (ignorer les états de plateau parasites)
         do {
             if (recv_msg(sock, &msg_in) < 0) return -1;
-            if (msg_in.type == MSG_ETAT_PLATEAU) affiche_plateau_recu(&msg_in);
         } while (msg_in.type != MSG_REPONSE_COUPS && msg_in.type != MSG_COUP_INVALIDE);
-        /*
+
         if (msg_in.type == MSG_COUP_INVALIDE || msg_in.nb == 0) {
-            printf("Aucun coup possible.\n");
+            printf("Aucun coup possible pour cette pièce.\n");
             continue;
         }
 
+        // 2. Afficher et demander destination
         affiche_coups_recus(&msg_in, src);
-        printf("Destination : ");
+        printf("Destination (ex: 31) ou -1 pour changer : ");
         int dst;
-        scanf("%d", &dst);
+        if (scanf("%d", &dst) != 1) { flush_stdin(); continue; }
+        if (dst == -1) continue;
 
         msg_out.type = MSG_JOUER_COUP;
         msg_out.data[0] = src;
         msg_out.data[1] = dst;
-        send_msg(sock, &msg_out);
+        if (send_msg(sock, &msg_out) < 0) return -1;
 
-        while (recv_msg(sock, &msg_in) >= 0) {
-            if (msg_in.type == MSG_COUP_OK) continue;
+        // 3. Attendre validation
+        while (1) {
+            if (recv_msg(sock, &msg_in) < 0) return -1;
+            
+            if (msg_in.type == MSG_COUP_OK) {
+                continue; // On attend encore le plateau mis à jour
+            }
             if (msg_in.type == MSG_ETAT_PLATEAU) {
                 affiche_plateau_recu(&msg_in);
-                return 0;
+                return 0; // TOUR FINI
             }
-            if (msg_in.type == MSG_COUP_INVALIDE) break;
-        }
-        */
-       if (msg_in.type == MSG_REPONSE_COUPS && msg_in.nb > 0) {
-            affiche_coups_recus(&msg_in, src);
-            printf("Destination (ex: 31) ou -1 pour changer de pièce : ");
-            int dst;
-            if (scanf("%d", &dst) != 1) { flush_stdin(); continue; }
-            if (dst == -1) continue;
-
-            // 3. Envoyer le coup à jouer
-            msg_out.type = MSG_JOUER_COUP;
-            msg_out.data[0] = src;
-            msg_out.data[1] = dst;
-            if (send_msg(sock, &msg_out) < 0) return -1;
-
-            // 4. Attendre confirmation et mise à jour du plateau
-            int coup_termine = 0;
-            while (!coup_termine && recv_msg(sock, &msg_in) >= 0) {
-                if (msg_in.type == MSG_COUP_OK) {
-                    // Le coup est validé, on attend maintenant le plateau
-                    continue; 
-                }
-                if (msg_in.type == MSG_ETAT_PLATEAU) {
-                    affiche_plateau_recu(&msg_in);
-                    printf("Coup validé. Attente de l'adversaire...\n");
-                    return 0; // Fin du tour, on retourne au main
-                }
-                if (msg_in.type == MSG_COUP_INVALIDE) {
-                    printf("Coup invalide ! Réessayez.\n");
-                    coup_termine = 1; // Sort de l'attente pour redemander src
-                }
+            if (msg_in.type == MSG_COUP_INVALIDE) {
+                printf("Mouvement illégal !\n");
+                break; // Repart au début de la boucle pour redemander src
             }
-        } else {
-            printf("Aucun coup possible pour cette pièce ou pièce invalide.\n");
-            continue;
         }
     }
 }
