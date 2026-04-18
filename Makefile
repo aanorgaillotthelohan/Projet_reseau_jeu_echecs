@@ -1,13 +1,13 @@
 CC      = gcc
-CFLAGS  = -Wall -Wextra -std=c11 -pedantic
+CFLAGS  = -Wall -Wextra -std=c11 -pedantic -lpthread -lm
 
 # Executables
 CLIENT  = client
 SERVER  = server
 
 # Sources
-CLIENT_SRCS = globals.c utils.c display.c pieces.c moves.c players.c salon.c application.c clientVrai.c
-SERVER_SRCS = globals.c utils.c display.c pieces.c moves.c players.c salon.c application.c serverVrai.c
+CLIENT_SRCS =  client.c globals.c moves.c pieces.c players.c display.c utils.c application.c 
+SERVER_SRCS = serveur.c globals.c moves.c pieces.c players.c display.c utils.c application.c salon.c
 
 # Objets
 CLIENT_OBJS = $(CLIENT_SRCS:.c=.o)
