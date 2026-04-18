@@ -227,7 +227,7 @@ static void *gestion_client(void *arg) {
     free(arg);
     MessageClient msg;
 
-    while (recv(sockClient, &msg, sizeof(msg), 0) > 0) {
+    while (recv(sockClient, &msg, sizeof(msg), 0) > 0) { 
         int rep = 0;
         if (msg.choix == '!') {
             retirer_joueur_file(sockClient);
