@@ -13,8 +13,8 @@
 #include "chess.h"          /* board, joueur, eliminated_pieces_*, … */
 #include "application.h"    /* (inclus pour la cohérence du projet)   */
 #include "protocol.h"       /* Message, MSG_*, MSG_DATA_MAX            */
-
-
+#include "pieces.h"
+#include "display.h"
 typedef struct {
     char choix;           /* 'c', 'i', 'j', 's', 'h', '!' */
     char idJoueur[128];
@@ -84,7 +84,7 @@ static void *listener(void *arg)
                 enRecherche = 0;
             }
         } else {
-            usleep(100000);   /* 100 ms — ne pas saturer le CPU [CV] */
+            sleep(100000);   /* 100 ms — ne pas saturer le CPU [CV] */
         }
     }
     return NULL;
@@ -372,7 +372,7 @@ int main(int argc, char **argv)
         if (!jeuEnCours) break;
 
         // menu principal
-        
+
         int choixValid = 0;
         while (!choixValid) {
             printf("Choix (j=jouer / s=spectateur / h=historique / !=quitter) : ");
