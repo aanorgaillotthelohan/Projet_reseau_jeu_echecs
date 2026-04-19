@@ -580,9 +580,16 @@ static void *gestion_client(void *arg)
             int rep = 0;
 
             // On vérifie que le salon n'est pas plein
-            if(idChoisi > 0 && idChoisi <= NbSalons){
-                Salon* s = Salons[idChoisi - 1];
+            Salon* s = NULL;
 
+            for(int i = 0; i < NbSalons; i++){
+                if(Salons[i] != NULL && Salons[i]->idSalon == idChoisi){
+                    s = Salons[i];
+                    break;
+                }
+            }
+
+            if(s != NULL){
                 if(s->nbSpectateurs < 20){
 
                     // créer le spectateur
@@ -596,9 +603,7 @@ static void *gestion_client(void *arg)
                         spec->NomJoueur, s->idSalon);
 
                     rep = 1; // succès
-                    Message plateau;
-                build_etat_plateau(&plateau);
-                send_msg(sockClient, &plateau);
+                    
                 } else {
                     printf("Salon %d plein\n", s->idSalon);
                     rep = 0;
