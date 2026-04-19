@@ -38,6 +38,8 @@
 /* ── Constantes ─────────────────────────────────────────────────────────── */
 #define PORT        1061      /* [SV]  port d'écoute                        */
 #define MAX_CLIENTS 50        /* [SV]  taille max de la file d'attente       */
+#define MAX_SALONS 25
+
 
 /* ════════════════════════════════════════════════════════════════════════════
  *  TYPES
@@ -69,6 +71,7 @@ joueur JoueursEnAttente[MAX_CLIENTS];
 int    debut    = 0;
 int    fin      = 0;
 int    NbSalons = 0;   /* remplace le doublon nbr_co de serveur_test_salon */
+Salon* Salons[MAX_SALONS];
 
 /* [SV] — Mutex protégeant la file d'attente */
 pthread_mutex_t mutexJoueurs = PTHREAD_MUTEX_INITIALIZER;
@@ -223,9 +226,9 @@ static void init_plateau(void)
  *          (MSG_COUP_INVALIDE si illégal, sans consommer le tour)
  * ════════════════════════════════════════════════════════════════════════════ */
 
-static void gere_partie(int dmec, int dmec_bis,
-                        const char *nom1, const char *nom2)
+static void gere_partie(int dmec, int dmec_bis,const char *nom1, const char *nom2,int idSalon)
 {
+    Salon *s = Salons[idSalon - 1];
     joueur j_blanc, j_noir;
     memset(&j_blanc, 0, sizeof(joueur));
     memset(&j_noir,  0, sizeof(joueur));
@@ -292,9 +295,23 @@ static void gere_partie(int dmec, int dmec_bis,
         /* ── 2 & 3. Boucle interne : coups ── */
         while (1) {
             if (recv_msg(sock_current, &msg_in) < 0) {
-                printf("[partie] Client déco pendant la partie\n");
-                goto fin_partie;
-            }
+
+            printf("[partie] Abandon détecté\n");
+
+            int winner_sock = (sock_current == dmec) ? dmec_bis : dmec;
+
+            Message win;
+            memset(&win, 0, sizeof(win));
+            win.type = MSG_VICTOIRE_FORFAIT;
+
+            send_msg(winner_sock, &win);
+
+            // fermer proprement
+            close(dmec);
+            close(dmec_bis);
+
+            return;
+        }
 
             /* ── Demande de liste de coups légaux ── */
             if (msg_in.type == MSG_DEMANDE_COUPS) {
@@ -361,21 +378,34 @@ static void gere_partie(int dmec, int dmec_bis,
                 msg_out.type = MSG_COUP_OK;
                 msg_out.nb   = 0;
                 send_msg(sock_current, &msg_out);
+                for(int i = 0; i < s->nbSpectateurs; i++){
+                    send_msg(s->ListeSpectateurs[i].socketJoueur, &msg_out);
+                }
 
                 /* Signaler un échec éventuel */
                 if (is_in_check(1)) {
                     msg_out.type = MSG_ECHEC_BLANC;
                     send_msg(sock_current, &msg_out);
+                    for(int i = 0; i < s->nbSpectateurs; i++){
+                        send_msg(s->ListeSpectateurs[i].socketJoueur, &msg_out);
+                    }
                 }
                 if (is_in_check(2)) {
                     msg_out.type = MSG_ECHEC_NOIR;
                     send_msg(sock_current, &msg_out);
+                    for(int i = 0; i < s->nbSpectateurs; i++){
+                        send_msg(s->ListeSpectateurs[i].socketJoueur, &msg_out);
+                    }
                 }
 
                 /* Envoyer le nouvel état du plateau */
                 build_etat_plateau(&plateau);
                 send_msg(sock_current, &plateau);
 
+                // envoyer aux spectateurs
+                for(int i = 0; i < s->nbSpectateurs; i++){
+                    send_msg(s->ListeSpectateurs[i].socketJoueur, &plateau);
+                }
                 printf("[partie] Tour %d joué : %d -> %d\n", tour, src, dst);
                 tour++;
                 break;   /* passer au tour suivant */
@@ -404,8 +434,7 @@ static void *thread_partie(void *arg)
     init_plateau();
 
     /* Lancement de la partie [STS] */
-    gere_partie(ctx->sock1, ctx->sock2, ctx->nom1, ctx->nom2);
-
+    gere_partie(ctx->sock1, ctx->sock2, ctx->nom1, ctx->nom2, ctx->id_salon);
     free(ctx);
     return NULL;
 }
@@ -483,9 +512,9 @@ static void *gestion_client(void *arg)
 
                 /* Créer l'objet Salon [SV] */
                 Salon *s = creeSalon(NbSalons, &j1, &j2);
-                printf("[salon %d] Créé entre %s et %s\n",
-                       s->idSalon, j1.NomJoueur, j2.NomJoueur);
-                free(s);   /* le salon sert ici de log ; la partie gère ses propres ressources */
+                printf("[salon %d] Créé entre %s et %s\n",s->idSalon, j1.NomJoueur, j2.NomJoueur);
+                Salons[NbSalons - 1] = s; 
+
 
                 /* Signaler le match aux deux clients [SV] */
                 int matchTrouve = 1;
@@ -522,13 +551,68 @@ static void *gestion_client(void *arg)
             printf("[file] %s en attente d'un adversaire…\n", msg.idJoueur);
             pthread_mutex_unlock(&mutexJoueurs);
             /* Le thread reste vivant pour surveiller les déconnexions */
-        }
+        }else if(msg.choix == 's'){
+            pthread_mutex_lock(&mutexJoueurs);
 
-        /* ── Spectateur (non implémenté) ── [SV] */
-        else if (msg.choix == 's') {
-            printf("[client %d] Mode spectateur non implémenté\n", sockClient);
-        }
+            // on envoie le nombre de salons en ligne
+            send(sockClient, &NbSalons, sizeof(NbSalons), 0);
 
+            // on envoie tous les salons
+            for(int i = 0; i < NbSalons; i++){
+                SalonNet sn;
+                sn.idSalon = Salons[i]->idSalon;
+                sn.nbSpectateurs = Salons[i]->nbSpectateurs;
+
+                strncpy(sn.joueur1, Salons[i]->Joueur1.NomJoueur, 31);
+                strncpy(sn.joueur2, Salons[i]->Joueur2.NomJoueur, 31);
+
+                send(sockClient, &sn, sizeof(sn), 0);
+            }
+
+            // on recois le choix du client
+            int idChoisi;
+            if(recv(sockClient, &idChoisi, sizeof(idChoisi), 0) <= 0){
+                printf("Erreur réception choix salon\n");
+                pthread_mutex_unlock(&mutexJoueurs);
+                return NULL;
+            }
+
+            int rep = 0;
+
+            // On vérifie que le salon n'est pas plein
+            if(idChoisi > 0 && idChoisi <= NbSalons){
+                Salon* s = Salons[idChoisi - 1];
+
+                if(s->nbSpectateurs < 20){
+
+                    // créer le spectateur
+                    joueur* spec = creejoueur(sockClient, msg.idJoueur);
+
+                    // ajouter à la liste
+                    s->ListeSpectateurs[s->nbSpectateurs] = *spec;
+                    s->nbSpectateurs++;
+
+                    printf("Spectateur %s ajouté au salon %d\n",
+                        spec->NomJoueur, s->idSalon);
+
+                    rep = 1; // succès
+                    Message plateau;
+                build_etat_plateau(&plateau);
+                send_msg(sockClient, &plateau);
+                } else {
+                    printf("Salon %d plein\n", s->idSalon);
+                    rep = 0;
+                }
+            } else {
+                printf("ID salon invalide : %d\n", idChoisi);
+                rep = 0;
+            }
+
+            // on envoie la réponse au client
+            send(sockClient, &rep, sizeof(rep), 0);
+
+            pthread_mutex_unlock(&mutexJoueurs);
+        }
         /* ── Historique (non implémenté) ── [SV] */
         else if (msg.choix == 'h') {
             printf("[client %d] Historique non implémenté\n", sockClient);
