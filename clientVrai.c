@@ -144,6 +144,7 @@ int main(int argc, char **argv){
             } 
             else if(choix == 'j' || choix == 's' || choix == 'h'){
                 choixValid = 1;
+                
             } 
             else {
                 printf("Choix invalide\n");
