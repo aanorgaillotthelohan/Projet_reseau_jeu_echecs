@@ -34,6 +34,7 @@
 #include "protocol.h"       /* Message, MSG_*, MSG_DATA_MAX            */
 #include "pieces.h"
 #include "display.h"
+#include "salon.h"
 /* ════════════════════════════════════════════════════════════════════════════
  *  TYPES
  * ════════════════════════════════════════════════════════════════════════════ */
@@ -331,6 +332,10 @@ static void boucle_jeu(int sock)
             }
             continue;
         }
+        if (msg.type == MSG_VICTOIRE_FORFAIT) {
+            printf("\n Victoire par forfait ! L'adversaire a quitté la partie.\n");
+            return; // retour menu principal
+        }
 
         /* Messages inattendus ignorés silencieusement */
     }
@@ -459,10 +464,77 @@ int main(int argc, char **argv)
                 boucle_jeu(dsock_mec);
             }
             connecte   = 1;   /* rester connecté pour rejouer */
+        }else if(choix == 's'){
+            int nbSalons = 0;
+            int choixSalon;
+            if(recv(dsock_mec, &nbSalons, sizeof(nbSalons), 0) <= 0){
+                printf("Erreur réception.\n");
+                break;
+            }
+            printf("\n=== Salons disponibles (%d) ===\n", nbSalons);
+            for(int i = 0; i < nbSalons; i++){
+                SalonNet s;
+                if(recv(dsock_mec, &s, sizeof(SalonNet), 0) <= 0){
+                    printf("Erreur réception salon.\n");
+                    break;
+                }
+            printf("Salon %d : %s vs %s (%d spectateurs)\n",s.idSalon, s.joueur1, s.joueur2, s.nbSpectateurs);            }
+            printf("==============================\n");
+            printf("Entrer l'ID du salon à rejoindre (0 pour annuler) : ");
+            scanf("%d", &choixSalon);
+
+            // envoyer le choix au serveur
+            send(dsock_mec, &choixSalon, sizeof(choixSalon), 0);
+
+            if(choixSalon == 0){
+                printf("Retour menu.\n");
+                break;
+            }
+
+            // recevoir la réponse du serveur
+            int rep = 0;
+            if(recv(dsock_mec, &rep, sizeof(rep), 0) <= 0){
+                printf("Erreur réception.\n");
+                break;
+            }
+
+            if(rep == 1){
+                printf("Vous avez rejoint le salon %d en tant que spectateur.\n", choixSalon);
+
+                Message msg;
+                if(recv_msg(dsock_mec, &msg) <= 0){
+                    printf("Erreur réception plateau.\n");
+                    return 0;
+                }
+
+                if(msg.type == MSG_ETAT_PLATEAU){
+                    affiche_plateau_recu(&msg);
+                }
+
+                while(1){
+                    if(recv_msg(dsock_mec, &msg) <= 0){
+                        printf("Déconnexion.\n");
+                        break;
+                    }
+
+                    if(msg.type == MSG_ETAT_PLATEAU){
+                        affiche_plateau_recu(&msg);
+                    }
+                    else if(msg.type == MSG_COUP_OK){
+                        printf("Un coup a été joué.\n");
+                    }
+                    else if(msg.type == MSG_ECHEC_BLANC){
+                        printf("Blanc en échec !\n");
+                    }
+                    else if(msg.type == MSG_ECHEC_NOIR){
+                        printf("Noir en échec !\n");
+                    }
+                }
+            } else {
+                printf("Salon invalide ou plein.\n");
+            }
         }
-        else if (choix == 's') {
-            printf("Mode spectateur non implémenté.\n");
-        }
+
         else if (choix == 'h') {
             printf("Historique non implémenté.\n");
         }
