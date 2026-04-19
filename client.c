@@ -1,3 +1,5 @@
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,20 +15,33 @@
 #include "chess.h"          /* board, joueur, eliminated_pieces_*, … */
 #include "application.h"    /* (inclus pour la cohérence du projet)   */
 #include "protocol.h"       /* Message, MSG_*, MSG_DATA_MAX            */
-#include "pieces.h"
 #include "display.h"
+#include "pieces.h"
+/* ════════════════════════════════════════════════════════════════════════════
+ *  TYPES
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+/* [CV] — Message d'authentification client→serveur */
 typedef struct {
     char choix;           /* 'c', 'i', 'j', 's', 'h', '!' */
     char idJoueur[128];
     char Mdp[128];
 } MessageClient;
 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  VARIABLES GLOBALES
+ * ════════════════════════════════════════════════════════════════════════════ */
 
+/* [CV] */
 int dsock_mec;                 /* socket principal vers le serveur */
 volatile int enRecherche = 0;  /* 1 = en attente de match          */
 volatile int matchTrouve = 0;  /* [NEW] partagé avec le listener   */
 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  UTILITAIRES
+ * ════════════════════════════════════════════════════════════════════════════ */
 
+/* [NEW] — version unique (fusionnée depuis les deux fichiers) */
 static void gestion_erreur(int res, const char *chaine)
 {
     if (res == -1) { perror(chaine); exit(1); }
@@ -39,6 +54,9 @@ static void flush_stdin(void)
     while ((c = getchar()) != '\n' && c != EOF);
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  PROTOCOLE RÉSEAU                                                  [CES]
+ * ════════════════════════════════════════════════════════════════════════════ */
 
 static int send_msg(int sock, const Message *m)
 {
@@ -66,6 +84,13 @@ static int recv_msg(int sock, Message *m)
     return 0;
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  THREAD LISTENER                                                   [CV + NEW]
+ *
+ *  Phase 1 (enRecherche == 1) : attend l'int matchTrouve du serveur.
+ *  Phase 2 (après le match)   : le thread se termine ; la boucle de jeu
+ *                                est gérée dans le thread principal.
+ * ════════════════════════════════════════════════════════════════════════════ */
 
 static void *listener(void *arg)
 {
@@ -84,13 +109,17 @@ static void *listener(void *arg)
                 enRecherche = 0;
             }
         } else {
-            sleep(100000);   /* 100 ms — ne pas saturer le CPU [CV] */
+            usleep(100000);   /* 100 ms — ne pas saturer le CPU [CV] */
         }
     }
     return NULL;
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  AFFICHAGE                                                         [CES]
+ * ════════════════════════════════════════════════════════════════════════════ */
 
+/* Reconstruit board local depuis data[0..63] puis affiche */
 static void affiche_plateau_recu(const Message *m)
 {
     for (int r = 0; r < 8; r++)
@@ -144,6 +173,14 @@ static void efface_marqueurs(void)
                 board[r][c] = ' ';
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  BOUCLE DE TOUR                                                    [CES]
+ *
+ *  Gère un tour complet en deux étapes :
+ *    1. Sélection de la pièce → demande coups au serveur
+ *    2. Saisie de la destination → envoi du coup
+ *  Retourne 0 si le coup a été joué, -1 si la connexion est perdue.
+ * ════════════════════════════════════════════════════════════════════════════ */
 
 static int tour_client(int sock, int player_id)
 {
@@ -241,7 +278,9 @@ static int tour_client(int sock, int player_id)
     }
 }
 
- 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  BOUCLE DE JEU (après match trouvé)                               [CES + NEW]
+ * ════════════════════════════════════════════════════════════════════════════ */
 
 static void boucle_jeu(int sock)
 {
@@ -286,6 +325,9 @@ static void boucle_jeu(int sock)
     }
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  MAIN                                                   [CV + CES + NEW]
+ * ════════════════════════════════════════════════════════════════════════════ */
 
 int main(int argc, char **argv)
 {
@@ -327,9 +369,10 @@ int main(int argc, char **argv)
 
     while (jeuEnCours) {
 
-        // authentification
+        /* ── Phase authentification ─────────────────────────────────────── */
+        /* [CV] */
         while (!connecte) {
-            printf("Choix (j=jouer / s=spectateur / h=historique / !=quitter) : ");
+            printf("Connexion / Inscription (c/i) : ");
             scanf(" %c", &choix);
             choix = tolower(choix);
             flush_stdin();
@@ -371,8 +414,8 @@ int main(int argc, char **argv)
 
         if (!jeuEnCours) break;
 
-        // menu principal
-
+        /* ── Menu principal ─────────────────────────────────────────────── */
+        /* [CV] */
         int choixValid = 0;
         while (!choixValid) {
             printf("Choix (j=jouer / s=spectateur / h=historique / !=quitter) : ");
@@ -398,17 +441,18 @@ int main(int argc, char **argv)
 
         if (!jeuEnCours) break;
 
-
+        /* Envoyer le choix au serveur [CV] */
         MessageClient msg_choix = {choix, "", ""};
         strncpy(msg_choix.idJoueur, idJoueur, 128);
         send(dsock_mec, &msg_choix, sizeof(msg_choix), 0);
 
-
+        /* ── Jouer ─────────────────────────────────────────────────────── */
         if (choix == 'j') {
             printf("Recherche de partie… (appuyez sur 'r' + Entrée pour annuler)\n");
             enRecherche = 1;
             matchTrouve = 0;
-
+            
+            /* Attendre le match ou annulation par l'utilisateur [CV] */
             char input[16];
             while (enRecherche && !matchTrouve) {
                 if (fgets(input, sizeof(input), stdin)) {
@@ -419,7 +463,9 @@ int main(int argc, char **argv)
                 }
             }
 
+            /* Si match trouvé, lancer la boucle de jeu [NEW → CES] */
             if (matchTrouve) {
+                printf("match reçu \n");
                 boucle_jeu(dsock_mec);
                 /* Après la partie, permettre de rejouer */
                 connecte   = 1;   /* rester connecté */

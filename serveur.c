@@ -264,6 +264,7 @@ static void gere_partie(int dmec, int dmec_bis,
 
     /* ── Boucle des tours ───────────────────────────────────────────────── */
     while (1) {
+        printf("boucle du sevreur lancée\n");
         int player_id;
         joueur *j;
         int sock_current;
@@ -437,32 +438,32 @@ static void *gestion_client(void *arg)
 
         int rep = 0;
 
-        
+        /* ── Quitter ── */
         if (msg.choix == '!') {
             retirer_joueur_file(sockClient);
             close(sockClient);
             return NULL;
         }
 
-        // inscription
+        /* ── Inscription ── [SV] */
         else if (msg.choix == 'i') {
             rep = Inscription(msg.idJoueur, msg.Mdp);
             send(sockClient, &rep, sizeof(rep), 0);
         }
 
-        //connexion
+        /* ── Connexion ── [SV] */
         else if (msg.choix == 'c') {
             rep = VerifConnexion(msg.idJoueur, msg.Mdp) ? 1 : 0;
             send(sockClient, &rep, sizeof(rep), 0);
         }
 
-        // jeu
+        /* ── Jouer ── [SV + NEW] */
         else if (msg.choix == 'j') {
             joueur *j = creejoueur(sockClient, msg.idJoueur);
 
             pthread_mutex_lock(&mutexJoueurs);
 
-            // gestion de la file
+            /* Ajouter le joueur en file [SV] */
             if (fin < MAX_CLIENTS) {
                 JoueursEnAttente[fin++] = *j;
             } else {
@@ -473,7 +474,7 @@ static void *gestion_client(void *arg)
             }
             free(j);
 
-            // creation du salon
+            /* Si 2 joueurs disponibles, former un salon [SV] */
             if (fin - debut >= 2) {
                 joueur j1 = JoueursEnAttente[debut];
                 joueur j2 = JoueursEnAttente[debut + 1];
@@ -481,17 +482,18 @@ static void *gestion_client(void *arg)
 
                 NbSalons++;
 
-                
+                /* Créer l'objet Salon [SV] */
                 Salon *s = creeSalon(NbSalons, &j1, &j2);
                 printf("[salon %d] Créé entre %s et %s\n",
                        s->idSalon, j1.NomJoueur, j2.NomJoueur);
-                free(s);   
+                free(s);   /* le salon sert ici de log ; la partie gère ses propres ressources */
 
-                int matchTrouve = 1; // int pour signaler le match
+                /* Signaler le match aux deux clients [SV] */
+                int matchTrouve = 1;
                 send(j1.socketJoueur, &matchTrouve, sizeof(matchTrouve), 0);
                 send(j2.socketJoueur, &matchTrouve, sizeof(matchTrouve), 0);
 
-                // avancer la pile
+                /* Compacter la file si besoin [SV] */
                 if (debut > 0 && fin >= MAX_CLIENTS / 2) {
                     memmove(JoueursEnAttente,
                             &JoueursEnAttente[debut],
@@ -500,7 +502,7 @@ static void *gestion_client(void *arg)
                     debut  = 0;
                 }
 
-                // lancer la partie dans le thread
+                /* Lancer la partie dans un thread dédié [NEW] */
                 ContextePartie *ctx = malloc(sizeof(ContextePartie));
                 ctx->sock1    = j1.socketJoueur;
                 ctx->sock2    = j2.socketJoueur;
@@ -512,38 +514,44 @@ static void *gestion_client(void *arg)
                 pthread_create(&tid_partie, NULL, thread_partie, ctx);
                 pthread_detach(tid_partie);
 
+                /* Les sockets sont maintenant gérés par thread_partie ;
+                 * ce thread de gestion_client peut se terminer proprement. */
                 pthread_mutex_unlock(&mutexJoueurs);
                 return NULL;
             }
 
             printf("[file] %s en attente d'un adversaire…\n", msg.idJoueur);
             pthread_mutex_unlock(&mutexJoueurs);
-            // on fait gaffe avec les deco
+            /* Le thread reste vivant pour surveiller les déconnexions */
         }
 
-        // a faire plus tard
+        /* ── Spectateur (non implémenté) ── [SV] */
         else if (msg.choix == 's') {
             printf("[client %d] Mode spectateur non implémenté\n", sockClient);
         }
 
-        // à faire plus tar
+        /* ── Historique (non implémenté) ── [SV] */
         else if (msg.choix == 'h') {
             printf("[client %d] Historique non implémenté\n", sockClient);
         }
     }
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+ *  MAIN                                                   [SV + STS]
+ * ════════════════════════════════════════════════════════════════════════════ */
 
 int main(void)
 {
     setlocale(LC_ALL, "");   /* [STS] active Unicode */
 
-    
+    /* Initialisation des globaux échecs [STS] */
     piece = (char *)malloc(sizeof(char));
     init_plateau();
 
-    memset(JoueursEnAttente, 0, sizeof(JoueursEnAttente));   
+    memset(JoueursEnAttente, 0, sizeof(JoueursEnAttente));   /* [SV] */
 
+    /* Création du socket d'écoute */
     int dsock = socket(PF_INET, SOCK_STREAM, 0);
     gestion_erreur(dsock, "socket");
 
@@ -560,7 +568,7 @@ int main(void)
 
     printf("Serveur d'échecs en écoute sur le port %d…\n", PORT);
 
-    // boucle gestion du client
+    /* Boucle d'acceptation (un thread par client) [SV] */
     while (1) {
         struct sockaddr_in adClient;
         socklen_t lgA = sizeof(adClient);

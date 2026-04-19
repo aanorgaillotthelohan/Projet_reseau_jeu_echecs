@@ -4,3 +4,5 @@ k k
 o o
 ka ka
 op op
+g g
+m m
