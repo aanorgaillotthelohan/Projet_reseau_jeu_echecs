@@ -76,6 +76,111 @@ void gestion_erreur(int res, const char *chaine)
     dest[strcspn(dest, "\n")] = '\0';
 }
 
+void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJoueur){
+
+    int dsock_udp = socket(PF_INET, SOCK_DGRAM, 0);
+    gestion_erreur(dsock_udp, "sock udp");
+
+    printf("chat\n");
+    *inchat = 1;
+    char message_udp[128];
+    char stockmessage[10][128];
+    char message_udp_complete[128];
+    memset(stockmessage, 0, sizeof(stockmessage)); //pour initialiser à 0 apparemment
+    memset(message_udp, 0, sizeof(message_udp));
+    memset(message_udp, 0, sizeof(message_udp_complete));
+    int pid_pere = getpid();
+    
+    int f = fork();
+    int timer = 0;
+    
+    struct sockaddr_in adUdp; // lieu de stock de la socket
+    adUdp.sin_family = AF_INET;
+    adUdp.sin_addr.s_addr =  adServ.sin_addr.s_addr ;
+    adUdp.sin_port = htons(PORT + idsalon);
+
+    size_t lgA = sizeof(adUdp);
+    
+    if (f == 0){
+        //message vide qui initialise la communication
+        int res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adUdp, lgA);
+        // Processus fils (client qui écrit)
+        time_t rawtime;
+        struct tm * timeinfo;
+        while(*inchat){
+            //signal(SIGINT,mortfils);
+            
+            //printf("-----------------\n");
+
+            fgets(message_udp, sizeof(message_udp), stdin); 
+            
+            if(strcmp(message_udp,"Quit\n")==0){
+                //kill(pid_pere, SIGUSR1);
+                memset(message_udp, 0, sizeof(message_udp));
+                message_udp[0] = 'f';
+                // Cast explicite
+                res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adUdp, lgA);
+                gestion_erreur(res_udp, "sendto f"); 
+                close(dsock_udp);
+                exit(0);
+            }
+            if(strcmp(message_udp,"\n")!=0){
+                time ( &rawtime );
+                timeinfo = localtime ( &rawtime );
+                char heure[32];
+                strftime(heure, sizeof(heure), " [%Hh:%Mm:%Ss]", timeinfo);
+
+                memset(message_udp_complete, 0, sizeof(message_udp_complete));
+
+                strcat(message_udp_complete, idJoueur);
+                strcat(message_udp_complete, heure);
+                strcat(message_udp_complete, ": ");
+
+                strcat(message_udp_complete, message_udp);
+
+                res_udp = sendto(dsock_udp, &message_udp_complete, sizeof(message_udp_complete), 0, (struct sockaddr *)&adUdp, lgA);
+                gestion_erreur(res_udp, "sendto chat");    
+            }
+
+        }
+    }
+    else{
+        // Processus père (client qui lit)
+        while(*inchat){
+            //signal(SIGINT,mortpere);
+            //signal(SIGUSR1,vraimort);
+            timer +=1;
+            
+            efface_marqueurs();
+            display();
+            // Cast explicite pour recvfrom
+            ssize_t reschat = recvfrom(dsock_udp, stockmessage, sizeof(stockmessage), 0, (struct sockaddr *)&adUdp, &lgA);
+            gestion_erreur(reschat, "recvfrom chat");
+            
+            if(strcmp(stockmessage[0],"f") == 0){
+                *inchat = 0;
+                printf("Quitte chat\n");
+                break;
+            }
+            else{
+                printf("\033c" );
+                //display();
+                for (int i = 0; i < 10; i++){
+                    if(strlen(stockmessage[i]) > 1){
+                        printf("%s \n", stockmessage[i]);
+                        fflush(stdout);
+                    }
+                }
+                printf("-----------------'Quit' pour revenir au jeu\n");
+            }
+
+
+        }
+    } 
+    
+    close(dsock_udp);
+}
+
 // Thread pour écouter le serveur
 void* listener(void* arg){
     while(1){
@@ -156,109 +261,7 @@ void* listener(void* arg){
         int src = atoi(buf);
 
         if (src == 666){
-
-            int dsock_udp = socket(PF_INET, SOCK_DGRAM, 0);
-            gestion_erreur(dsock_udp, "sock udp");
-
-            printf("chat\n");
-            inchat = 1;
-            char message_udp[128];
-            char stockmessage[10][128];
-            char message_udp_complete[128];
-            memset(stockmessage, 0, sizeof(stockmessage)); //pour initialiser à 0 apparemment
-            memset(message_udp, 0, sizeof(message_udp));
-            memset(message_udp, 0, sizeof(message_udp_complete));
-            int pid_pere = getpid();
-            
-            int f = fork();
-            int timer = 0;
-            
-            struct sockaddr_in adUdp; // lieu de stock de la socket
-            adUdp.sin_family = AF_INET;
-            adUdp.sin_addr.s_addr =  adServ.sin_addr.s_addr ;
-            adUdp.sin_port = htons(PORT + idsalon);
-
-            lgA = sizeof(adUdp);
-            
-            
-            if (f == 0){
-                //message vide qui initialise la communication
-                int res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adUdp, lgA);
-                // Processus fils (client qui écrit)
-                time_t rawtime;
-                struct tm * timeinfo;
-                while(inchat){
-                    //signal(SIGINT,mortfils);
-                    
-                    //printf("-----------------\n");
-
-                    fgets(message_udp, sizeof(message_udp), stdin); 
-                    
-                    if(strcmp(message_udp,"Quit\n")==0){
-                        //kill(pid_pere, SIGUSR1);
-                        memset(message_udp, 0, sizeof(message_udp));
-                        message_udp[0] = 'f';
-                        // Cast explicite
-                        res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adUdp, lgA);
-                        gestion_erreur(res_udp, "sendto f"); 
-                        close(dsock_udp);
-                        exit(0);
-                    }
-                    if(strcmp(message_udp,"\n")!=0){
-                        time ( &rawtime );
-                        timeinfo = localtime ( &rawtime );
-                        char heure[32];
-                        strftime(heure, sizeof(heure), " [%Hh:%Mm:%Ss]", timeinfo);
-
-                        memset(message_udp_complete, 0, sizeof(message_udp_complete));
-
-                        strcat(message_udp_complete, idJoueur);
-                        strcat(message_udp_complete, heure);
-                        strcat(message_udp_complete, ": ");
-
-                        strcat(message_udp_complete, message_udp);
-
-                        res_udp = sendto(dsock_udp, &message_udp_complete, sizeof(message_udp_complete), 0, (struct sockaddr *)&adUdp, lgA);
-                        gestion_erreur(res_udp, "sendto chat");    
-                    }
-
-                }
-            }
-            else{
-                // Processus père (client qui lit)
-                while(inchat){
-                    //signal(SIGINT,mortpere);
-                    //signal(SIGUSR1,vraimort);
-                    timer +=1;
-                    
-                    efface_marqueurs();
-                    display();
-                    // Cast explicite pour recvfrom
-                    ssize_t reschat = recvfrom(dsock_udp, stockmessage, sizeof(stockmessage), 0, (struct sockaddr *)&adUdp, &lgA);
-                    gestion_erreur(reschat, "recvfrom chat");
-                    
-                    if(strcmp(stockmessage[0],"f") == 0){
-                        inchat = 0;
-                        printf("Quitte chat\n");
-                        break;
-                    }
-                    else{
-                        printf("\033c" );
-                        //display();
-                        for (int i = 0; i < 10; i++){
-                            if(strlen(stockmessage[i]) > 1){
-                                printf("%s \n", stockmessage[i]);
-                                fflush(stdout);
-                            }
-                        }
-                        printf("-----------------'Quit' pour revenir au jeu\n");
-                    }
-
-
-                }
-            } 
-            
-            close(dsock_udp);
+            gere_chat(&inchat, adServ,idsalon,idJoueur);
         }
         else{
             if (src < 0 || src > 77 || src % 10 > 7) {
