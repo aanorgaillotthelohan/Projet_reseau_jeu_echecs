@@ -111,7 +111,7 @@ typedef struct {
 } ArgPartie;
 
 
- void *thread_partie(void *arg)
+ void *gere_partie(void *arg)
 {
     ArgPartie *a = (ArgPartie *)arg;
     int dmec     = a->sock1;
@@ -401,7 +401,7 @@ fin_partie:
                 strncpy(ap->nom2, j2.nom, 128);
 
                 pthread_t tid;
-                pthread_create(&tid, NULL, thread_partie, ap);
+                pthread_create(&tid, NULL, gere_partie, ap);
                 pthread_detach(tid);
                 return NULL;
             }
