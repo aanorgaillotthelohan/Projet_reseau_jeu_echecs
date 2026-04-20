@@ -1,22 +1,12 @@
 /*
- * serveur.c  —  Fusion de serverVrai.c et serveur_test_salon.c
+ * server_final.c — Fusion de serveur_test_salon.c + serverVrai.c + temp_serv.c
  *
- * Provenance de chaque bloc :
- *   [SV]  = serverVrai.c
- *   [STS] = serveur_test_salon.c
- *   [NEW] = nouveau code d'intégration
- *
- * Logique conservée :
- *   - File d'attente multi-clients avec mutex          [SV]
- *   - Authentification / inscription par MessageClient [SV]
- *   - Protocole échecs (Message, send_msg, recv_msg)   [STS]
- *   - Sérialisation plateau (build_etat_plateau)       [STS]
- *   - Logique de partie complète (gere_partie)         [STS]
- *   - Réinitialisation du plateau entre parties        [STS]
- *   - Attribution couleur aléatoire                    [STS]
- *   - Thread par client (pthread_create/detach)        [SV]
- *   - gere_partie lancée dans un thread dédié          [NEW]
- *   - Suppression du doublon nbr_co (→ NbSalons)       [NEW]
+ * Fonctionnement :
+ *   - Un thread par client connecté (gestion_client)
+ *   - Authentification (connexion 'c' / inscription 'i')
+ *   - File d'attente : dès que 2 joueurs demandent à jouer ('j'),
+ *     un thread de partie (thread_partie) est lancé pour eux
+ *   - La partie échecs tourne dans thread_partie via gere_partie()
  */
 
 #include <stdio.h>
@@ -30,59 +20,49 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "chess.h"          /* board, joueur, is_in_check, change, … */
-#include "application.h"    /* VerifConnexion, Inscription            */
-#include "salon.h"          /* Salon, creeSalon                       */
-#include "protocol.h"       /* Message, MSG_*, MSG_DATA_MAX           */
+#include "chess.h"
+#include "application.h"
+#include "salon.h"
+#include "protocol.h"
+#include "players.h"
+#include "pieces.h"
+#include "display.h"
 
 /* ── Constantes ─────────────────────────────────────────────────────────── */
-#define PORT        1061      /* [SV]  port d'écoute                        */
-#define MAX_CLIENTS 50        /* [SV]  taille max de la file d'attente       */
+#define PORT        1061
+#define MAX_CLIENTS 50
 
 /* ════════════════════════════════════════════════════════════════════════════
  *  TYPES
  * ════════════════════════════════════════════════════════════════════════════ */
 
-/* [SV] — Message d'authentification client→serveur */
 typedef struct {
-    char choix;           /* 'c'=connexion, 'i'=inscription, 'j'=jouer,
-                             's'=spectateur, 'h'=historique, '!'=quitter */
+    char choix;
     char idJoueur[128];
     char Mdp[128];
 } MessageClient;
 
-/* [NEW] — Contexte passé au thread de partie */
 typedef struct {
-    int  sock1;           /* socket du premier joueur  */
-    int  sock2;           /* socket du second joueur   */
-    int  id_salon;        /* identifiant du salon       */
-    char nom1[20];        /* pseudo du joueur 1         */
-    char nom2[20];        /* pseudo du joueur 2         */
+    int  sock1;
+    int  sock2;
+    int  id_salon;
+    char nom1[20];
+    char nom2[20];
 } ContextePartie;
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  VARIABLES GLOBALES
+ *  VARIABLES GLOBALES — File d'attente
  * ════════════════════════════════════════════════════════════════════════════ */
 
-/* [SV] — File d'attente circulaire */
 joueur JoueursEnAttente[MAX_CLIENTS];
 int    debut    = 0;
 int    fin      = 0;
-int    NbSalons = 0;   /* remplace le doublon nbr_co de serveur_test_salon */
+int    NbSalons = 0;
 
-/* [SV] — Mutex protégeant la file d'attente */
 pthread_mutex_t mutexJoueurs = PTHREAD_MUTEX_INITIALIZER;
 
-/*
- * NOTE : board, eliminated_pieces_*, en_passant_*, white/black_*_moved sont
- * des globaux définis dans globals.c (chess.h).  Dans la version actuelle,
- * chaque partie réinitialise ces globaux séquentiellement.  Si plusieurs
- * parties simultanées sont voulues à terme, il faudra les encapsuler dans
- * ContextePartie.  Pour l'instant on conserve le comportement existant.
- */
-
 /* ════════════════════════════════════════════════════════════════════════════
- *  UTILITAIRES RÉSEAU                                                [STS]
+ *  UTILITAIRES RÉSEAU
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static void gestion_erreur(int res, const char *chaine)
@@ -90,7 +70,6 @@ static void gestion_erreur(int res, const char *chaine)
     if (res == -1) { perror(chaine); exit(1); }
 }
 
-/* Envoi garanti (loop sur send) */
 static int send_msg(int sock, const Message *m)
 {
     ssize_t total = 0;
@@ -104,7 +83,6 @@ static int send_msg(int sock, const Message *m)
     return 0;
 }
 
-/* Réception garantie (loop sur recv) */
 static int recv_msg(int sock, Message *m)
 {
     ssize_t total = 0;
@@ -119,13 +97,12 @@ static int recv_msg(int sock, Message *m)
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  FILE D'ATTENTE                                                    [SV]
+ *  FILE D'ATTENTE
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static void retirer_joueur_file(int sockClient)
 {
     pthread_mutex_lock(&mutexJoueurs);
-
     int index = -1;
     for (int i = debut; i < fin; i++) {
         if (JoueursEnAttente[i].socketJoueur == sockClient) {
@@ -139,26 +116,53 @@ static void retirer_joueur_file(int sockClient)
         fin--;
         printf("[file] Joueur retiré (socket %d)\n", sockClient);
     }
-
     pthread_mutex_unlock(&mutexJoueurs);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  SÉRIALISATION DU PLATEAU                                          [STS]
+ *  PLATEAU — État partagé par partie (protégé dans thread_partie)
  * ════════════════════════════════════════════════════════════════════════════ */
+
+/* Chaque partie a son propre état local.
+ * On utilise les globaux de chess.h / globals.c car le projet y repose.
+ * Les parties sont sérialisées par mutex_plateau si nécessaire.
+ * Pour l'instant, une seule partie à la fois est supportée proprement
+ * (le mutex global board est partagé) ; le code est structuré pour
+ * être facilement étendu à plusieurs parties simultanées. */
+
+static pthread_mutex_t mutex_plateau = PTHREAD_MUTEX_INITIALIZER;
+
+static void init_plateau(void)
+{
+    memset(board, ' ', sizeof(board));
+    board[0][0]='r'; board[0][1]='h'; board[0][2]='c'; board[0][3]='q';
+    board[0][4]='k'; board[0][5]='c'; board[0][6]='h'; board[0][7]='r';
+    for (int c = 0; c < 8; c++) board[1][c] = 'p';
+    for (int c = 0; c < 8; c++) board[6][c] = 'P';
+    board[7][0]='R'; board[7][1]='H'; board[7][2]='C'; board[7][3]='Q';
+    board[7][4]='K'; board[7][5]='C'; board[7][6]='H'; board[7][7]='R';
+
+    white_king_moved       = false; white_rook_left_moved  = false;
+    white_rook_right_moved = false; black_king_moved       = false;
+    black_rook_left_moved  = false; black_rook_right_moved = false;
+
+    en_passant_col         = -1; en_passant_row         = -1;
+    en_passant_capture_row = -1; en_passant_capture_col = -1;
+
+    eliminated_pieces_white.start = NULL;
+    eliminated_pieces_black.start = NULL;
+}
 
 static void build_etat_plateau(Message *m)
 {
     memset(m, 0, sizeof(Message));
     m->type = MSG_ETAT_PLATEAU;
 
-    /* board[0..7][0..7] aplati en data[0..63] */
     int idx = 0;
     for (int r = 0; r < 8; r++)
         for (int c = 0; c < 8; c++)
             m->data[idx++] = (int)(unsigned char)board[r][c];
 
-    /* Pièces éliminées blanches : nombre en data[64], puis chars */
     int nb_w = 0;
     eliminated_piece *p = eliminated_pieces_white.start;
     while (p) { nb_w++; p = p->next; }
@@ -171,7 +175,6 @@ static void build_etat_plateau(Message *m)
         p = p->next;
     }
 
-    /* Pièces éliminées noires : nombre en data[65], puis chars */
     int nb_b = 0;
     p = eliminated_pieces_black.start;
     while (p) { nb_b++; p = p->next; }
@@ -187,40 +190,7 @@ static void build_etat_plateau(Message *m)
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  RÉINITIALISATION DU PLATEAU POUR UNE NOUVELLE PARTIE             [STS]
- * ════════════════════════════════════════════════════════════════════════════ */
-
-static void init_plateau(void)
-{
-    memset(board, ' ', sizeof(board));
-    board[0][0]='r'; board[0][1]='h'; board[0][2]='c'; board[0][3]='q';
-    board[0][4]='k'; board[0][5]='c'; board[0][6]='h'; board[0][7]='r';
-    for (int c = 0; c < 8; c++) board[1][c] = 'p';
-    for (int c = 0; c < 8; c++) board[6][c] = 'P';
-    board[7][0]='R'; board[7][1]='H'; board[7][2]='C'; board[7][3]='Q';
-    board[7][4]='K'; board[7][5]='C'; board[7][6]='H'; board[7][7]='R';
-
-    white_king_moved        = false; white_rook_left_moved  = false;
-    white_rook_right_moved  = false; black_king_moved       = false;
-    black_rook_left_moved   = false; black_rook_right_moved = false;
-
-    en_passant_col         = -1; en_passant_row         = -1;
-    en_passant_capture_row = -1; en_passant_capture_col = -1;
-
-    eliminated_pieces_white.start = NULL;
-    eliminated_pieces_black.start = NULL;
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
- *  LOGIQUE DE PARTIE                                                 [STS]
- *
- *  Boucle de jeu pour deux sockets connectés :
- *    1. Tirage au sort des couleurs
- *    2. Boucle de tours :
- *       a. Envoie MSG_ETAT_PLATEAU + MSG_VOTRE_TOUR au joueur courant
- *       b. Attend MSG_DEMANDE_COUPS → calcule et renvoie MSG_REPONSE_COUPS
- *       c. Attend MSG_JOUER_COUP    → valide/joue   → renvoie MSG_ETAT_PLATEAU
- *          (MSG_COUP_INVALIDE si illégal, sans consommer le tour)
+ *  LOGIQUE DE PARTIE
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static void gere_partie(int dmec, int dmec_bis,
@@ -231,18 +201,15 @@ static void gere_partie(int dmec, int dmec_bis,
     memset(&j_noir,  0, sizeof(joueur));
     strncpy(j_blanc.Couleur, "blanc", 20);
     strncpy(j_noir.Couleur,  "noir",  20);
-    /* Renseigner les noms dans les joueurs */
     strncpy(j_blanc.NomJoueur, nom1, 20);
     strncpy(j_noir.NomJoueur,  nom2, 20);
 
-    int tour = 1;   /* impair = blanc, pair = noir */
-    Message msg_in, msg_out, ta_couleur;
+    int tour = 1;
+    Message msg_in, msg_out, ta_couleur, plateau;
 
-    /* ── Attribution des couleurs (aléatoire) ──────────────────────────── */
-    /* [STS] */
-    int first_co;    /* 1 → dmec joue blanc, 0 → dmec joue noir */
+    /* ── Attribution des couleurs ── */
+    int first_co;
     if (rand() % 2) {
-        /* dmec = blanc, dmec_bis = noir */
         memset(&ta_couleur, 0, sizeof(ta_couleur));
         ta_couleur.type = MSG_BLANC; ta_couleur.nb = 1;
         if (send_msg(dmec,     &ta_couleur) < 0) goto fin_partie;
@@ -250,7 +217,6 @@ static void gere_partie(int dmec, int dmec_bis,
         if (send_msg(dmec_bis, &ta_couleur) < 0) goto fin_partie;
         first_co = 1;
     } else {
-        /* dmec = noir, dmec_bis = blanc */
         memset(&ta_couleur, 0, sizeof(ta_couleur));
         ta_couleur.type = MSG_NOIR; ta_couleur.nb = 1;
         if (send_msg(dmec,     &ta_couleur) < 0) goto fin_partie;
@@ -262,42 +228,39 @@ static void gere_partie(int dmec, int dmec_bis,
     printf("[partie] Début entre %s (blanc=%s) et %s\n",
            nom1, first_co ? nom1 : nom2, nom2);
 
-    /* ── Boucle des tours ───────────────────────────────────────────────── */
+    /* ── Boucle des tours ── */
     while (1) {
-        printf("boucle du sevreur lancée\n");
         int player_id;
         joueur *j;
         int sock_current;
 
-        if (tour % 2 == 1) {                    /* tour des blancs */
+        if (tour % 2 == 1) {
             player_id    = 1;
             sock_current = (first_co == 1) ? dmec : dmec_bis;
             j            = &j_blanc;
-        } else {                                 /* tour des noirs */
+        } else {
             player_id    = 2;
             sock_current = (first_co == 1) ? dmec_bis : dmec;
             j            = &j_noir;
         }
 
-        /* ── 1. Envoyer plateau + MSG_VOTRE_TOUR ── */
-        Message plateau;
+        /* 1. Envoyer plateau + MSG_VOTRE_TOUR */
         build_etat_plateau(&plateau);
-        if (send_msg(sock_current, &plateau) < 0)  goto fin_partie;
+        if (send_msg(sock_current, &plateau) < 0) goto fin_partie;
 
         memset(&msg_out, 0, sizeof(msg_out));
         msg_out.type    = MSG_VOTRE_TOUR;
         msg_out.data[0] = player_id;
         msg_out.nb      = 1;
-        if (send_msg(sock_current, &msg_out) < 0)  goto fin_partie;
+        if (send_msg(sock_current, &msg_out) < 0) goto fin_partie;
 
-        /* ── 2 & 3. Boucle interne : coups ── */
+        /* 2 & 3. Boucle interne : traitement des messages du client */
         while (1) {
             if (recv_msg(sock_current, &msg_in) < 0) {
-                printf("[partie] Client déco pendant la partie\n");
+                printf("Client a déco\n");
                 goto fin_partie;
             }
 
-            /* ── Demande de liste de coups légaux ── */
             if (msg_in.type == MSG_DEMANDE_COUPS) {
                 int src = msg_in.data[0];
                 int r1, c1;
@@ -326,8 +289,6 @@ static void gere_partie(int dmec, int dmec_bis,
                 }
                 send_msg(sock_current, &msg_out);
             }
-
-            /* ── Jouer un coup ── */
             else if (msg_in.type == MSG_JOUER_COUP) {
                 int src = msg_in.data[0];
                 int dst = msg_in.data[1];
@@ -363,7 +324,6 @@ static void gere_partie(int dmec, int dmec_bis,
                 msg_out.nb   = 0;
                 send_msg(sock_current, &msg_out);
 
-                /* Signaler un échec éventuel */
                 if (is_in_check(1)) {
                     msg_out.type = MSG_ECHEC_BLANC;
                     send_msg(sock_current, &msg_out);
@@ -373,16 +333,15 @@ static void gere_partie(int dmec, int dmec_bis,
                     send_msg(sock_current, &msg_out);
                 }
 
-                /* Envoyer le nouvel état du plateau */
                 build_etat_plateau(&plateau);
                 send_msg(sock_current, &plateau);
 
-                printf("[partie] Tour %d joué : %d -> %d\n", tour, src, dst);
+                printf("Tour %d joué : %d -> %d\n", tour, src, dst);
                 tour++;
-                break;   /* passer au tour suivant */
+                break;
             }
-        } /* fin boucle interne */
-    } /* fin boucle de tours */
+        }
+    }
 
 fin_partie:
     printf("[partie] Fin de partie entre %s et %s\n", nom1, nom2);
@@ -391,20 +350,17 @@ fin_partie:
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  THREAD DE PARTIE                                                  [NEW]
- *
- *  Lance gere_partie() pour une paire de joueurs déjà formée.
- *  Réinitialise le plateau avant le début.
+ *  THREAD DE PARTIE
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static void *thread_partie(void *arg)
 {
     ContextePartie *ctx = (ContextePartie *)arg;
 
-    /* Réinitialisation du plateau [STS] */
+    pthread_mutex_lock(&mutex_plateau);
     init_plateau();
+    pthread_mutex_unlock(&mutex_plateau);
 
-    /* Lancement de la partie [STS] */
     gere_partie(ctx->sock1, ctx->sock2, ctx->nom1, ctx->nom2);
 
     free(ctx);
@@ -412,12 +368,7 @@ static void *thread_partie(void *arg)
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  GESTION D'UN CLIENT (thread par connexion)                        [SV]
- *
- *  Chaque client traverse trois phases :
- *    1. Authentification (connexion ou inscription)
- *    2. Menu (jouer / spectateur / historique / quitter)
- *    3. Si 'j' : mise en file d'attente ; si 2 joueurs prêts → thread_partie
+ *  GESTION D'UN CLIENT (un thread par connexion)
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static void *gestion_client(void *arg)
@@ -430,7 +381,7 @@ static void *gestion_client(void *arg)
     while (1) {
         ssize_t r = recv(sockClient, &msg, sizeof(msg), 0);
         if (r <= 0) {
-            printf("[client %d] Déconnecté\n", sockClient);
+            printf("Client déconnecté\n");
             retirer_joueur_file(sockClient);
             close(sockClient);
             return NULL;
@@ -438,62 +389,49 @@ static void *gestion_client(void *arg)
 
         int rep = 0;
 
-        /* ── Quitter ── */
         if (msg.choix == '!') {
             retirer_joueur_file(sockClient);
             close(sockClient);
             return NULL;
         }
-
-        /* ── Inscription ── [SV] */
         else if (msg.choix == 'i') {
             rep = Inscription(msg.idJoueur, msg.Mdp);
             send(sockClient, &rep, sizeof(rep), 0);
         }
-
-        /* ── Connexion ── [SV] */
         else if (msg.choix == 'c') {
             rep = VerifConnexion(msg.idJoueur, msg.Mdp) ? 1 : 0;
             send(sockClient, &rep, sizeof(rep), 0);
         }
-
-        /* ── Jouer ── [SV + NEW] */
         else if (msg.choix == 'j') {
             joueur *j = creejoueur(sockClient, msg.idJoueur);
 
             pthread_mutex_lock(&mutexJoueurs);
 
-            /* Ajouter le joueur en file [SV] */
             if (fin < MAX_CLIENTS) {
                 JoueursEnAttente[fin++] = *j;
             } else {
-                printf("[file] File d'attente pleine !\n");
+                printf("File d'attente pleine !\n");
                 pthread_mutex_unlock(&mutexJoueurs);
                 free(j);
                 continue;
             }
             free(j);
 
-            /* Si 2 joueurs disponibles, former un salon [SV] */
             if (fin - debut >= 2) {
                 joueur j1 = JoueursEnAttente[debut];
                 joueur j2 = JoueursEnAttente[debut + 1];
                 debut += 2;
 
                 NbSalons++;
-
-                /* Créer l'objet Salon [SV] */
                 Salon *s = creeSalon(NbSalons, &j1, &j2);
-                printf("[salon %d] Créé entre %s et %s\n",
+                printf("Salon %d créé entre %s et %s\n",
                        s->idSalon, j1.NomJoueur, j2.NomJoueur);
-                free(s);   /* le salon sert ici de log ; la partie gère ses propres ressources */
+                free(s);
 
-                /* Signaler le match aux deux clients [SV] */
                 int matchTrouve = 1;
                 send(j1.socketJoueur, &matchTrouve, sizeof(matchTrouve), 0);
                 send(j2.socketJoueur, &matchTrouve, sizeof(matchTrouve), 0);
 
-                /* Compacter la file si besoin [SV] */
                 if (debut > 0 && fin >= MAX_CLIENTS / 2) {
                     memmove(JoueursEnAttente,
                             &JoueursEnAttente[debut],
@@ -502,7 +440,6 @@ static void *gestion_client(void *arg)
                     debut  = 0;
                 }
 
-                /* Lancer la partie dans un thread dédié [NEW] */
                 ContextePartie *ctx = malloc(sizeof(ContextePartie));
                 ctx->sock1    = j1.socketJoueur;
                 ctx->sock2    = j2.socketJoueur;
@@ -514,49 +451,40 @@ static void *gestion_client(void *arg)
                 pthread_create(&tid_partie, NULL, thread_partie, ctx);
                 pthread_detach(tid_partie);
 
-                /* Les sockets sont maintenant gérés par thread_partie ;
-                 * ce thread de gestion_client peut se terminer proprement. */
                 pthread_mutex_unlock(&mutexJoueurs);
                 return NULL;
             }
 
-            printf("[file] %s en attente d'un adversaire…\n", msg.idJoueur);
+            printf("[file] %s en attente d'un adversaire...\n", msg.idJoueur);
             pthread_mutex_unlock(&mutexJoueurs);
-            /* Le thread reste vivant pour surveiller les déconnexions */
         }
-
-        /* ── Spectateur (non implémenté) ── [SV] */
         else if (msg.choix == 's') {
-            printf("[client %d] Mode spectateur non implémenté\n", sockClient);
+            printf("Mode spectateur non implémenté.\n");
         }
-
-        /* ── Historique (non implémenté) ── [SV] */
         else if (msg.choix == 'h') {
-            printf("[client %d] Historique non implémenté\n", sockClient);
+            printf("Historique non implémenté.\n");
         }
     }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  MAIN                                                   [SV + STS]
+ *  MAIN
  * ════════════════════════════════════════════════════════════════════════════ */
 
 int main(void)
 {
-    setlocale(LC_ALL, "");   /* [STS] active Unicode */
+    setlocale(LC_ALL, "");
 
-    /* Initialisation des globaux échecs [STS] */
     piece = (char *)malloc(sizeof(char));
     init_plateau();
 
-    memset(JoueursEnAttente, 0, sizeof(JoueursEnAttente));   /* [SV] */
+    memset(JoueursEnAttente, 0, sizeof(JoueursEnAttente));
 
-    /* Création du socket d'écoute */
     int dsock = socket(PF_INET, SOCK_STREAM, 0);
     gestion_erreur(dsock, "socket");
 
     int opt = 1;
-    setsockopt(dsock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));   /* [STS] */
+    setsockopt(dsock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     struct sockaddr_in ad;
     ad.sin_family      = AF_INET;
@@ -564,11 +492,10 @@ int main(void)
     ad.sin_port        = htons(PORT);
 
     gestion_erreur(bind  (dsock, (struct sockaddr *)&ad, sizeof(ad)), "bind");
-    gestion_erreur(listen(dsock, MAX_CLIENTS), "listen");   /* [SV] backlog=MAX_CLIENTS */
+    gestion_erreur(listen(dsock, MAX_CLIENTS), "listen");
 
-    printf("Serveur d'échecs en écoute sur le port %d…\n", PORT);
+    printf("Serveur d'echecs en écoute sur le port %d...\n", PORT);
 
-    /* Boucle d'acceptation (un thread par client) [SV] */
     while (1) {
         struct sockaddr_in adClient;
         socklen_t lgA = sizeof(adClient);
@@ -581,7 +508,7 @@ int main(void)
             continue;
         }
 
-        printf("[main] Nouveau client connecté (socket %d)\n", *sockClient);
+        printf("Client connecté !\n");
 
         pthread_t tid;
         pthread_create(&tid, NULL, gestion_client, sockClient);

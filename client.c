@@ -1,11 +1,8 @@
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <locale.h>
 #include <ctype.h>
 #include <sys/socket.h>
@@ -15,10 +12,11 @@
 #include "chess.h"          /* board, joueur, eliminated_pieces_*, … */
 #include "application.h"    /* (inclus pour la cohérence du projet)   */
 #include "protocol.h"       /* Message, MSG_*, MSG_DATA_MAX            */
-#include "display.h"
 #include "pieces.h"
+#include "display.h"
+
 /* ════════════════════════════════════════════════════════════════════════════
- *  TYPES
+ * TYPES
  * ════════════════════════════════════════════════════════════════════════════ */
 
 /* [CV] — Message d'authentification client→serveur */
@@ -29,16 +27,14 @@ typedef struct {
 } MessageClient;
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  VARIABLES GLOBALES
+ * VARIABLES GLOBALES
  * ════════════════════════════════════════════════════════════════════════════ */
 
 /* [CV] */
-int dsock_mec;                 /* socket principal vers le serveur */
-volatile int enRecherche = 0;  /* 1 = en attente de match          */
-volatile int matchTrouve = 0;  /* [NEW] partagé avec le listener   */
+int dsock_mec;   /* socket principal vers le serveur */
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  UTILITAIRES
+ * UTILITAIRES
  * ════════════════════════════════════════════════════════════════════════════ */
 
 /* [NEW] — version unique (fusionnée depuis les deux fichiers) */
@@ -55,7 +51,7 @@ static void flush_stdin(void)
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  PROTOCOLE RÉSEAU                                                  [CES]
+ * PROTOCOLE RÉSEAU                                                  [CES]
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static int send_msg(int sock, const Message *m)
@@ -85,38 +81,32 @@ static int recv_msg(int sock, Message *m)
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  THREAD LISTENER                                                   [CV + NEW]
+ * ATTENTE DE MATCH                                                  [NEW]
  *
- *  Phase 1 (enRecherche == 1) : attend l'int matchTrouve du serveur.
- *  Phase 2 (après le match)   : le thread se termine ; la boucle de jeu
- *                                est gérée dans le thread principal.
+ * Bloque sur recv() jusqu'à recevoir l'int matchTrouve=1 du serveur,
+ * ou jusqu'à déconnexion.  Pas de thread séparé : le main attend ici,
+ * ce qui évite toute race condition avec boucle_jeu().
+ * Retourne 1 si match trouvé, 0 si déconnexion ou annulation.
  * ════════════════════════════════════════════════════════════════════════════ */
 
-static void *listener(void *arg)
+static int attendre_match(int sock)
 {
-    (void)arg;
-    while (1) {
-        if (enRecherche) {
-            int rep = 0;
-            ssize_t r = recv(dsock_mec, &rep, sizeof(rep), 0);
-            if (r <= 0) {
-                printf("\nDéconnecté du serveur.\n");
-                exit(1);
-            }
-            if (rep == 1) {
-                printf("\n=== Match trouvé ! La partie va commencer… ===\n");
-                matchTrouve = 1;   /* [NEW] signale au main */
-                enRecherche = 0;
-            }
-        } else {
-            usleep(100000);   /* 100 ms — ne pas saturer le CPU [CV] */
-        }
+    int rep = 0;
+    printf("En attente d'un adversaire… (Ctrl-C pour quitter)\n");
+    ssize_t r = recv(sock, &rep, sizeof(rep), 0);
+    if (r <= 0) {
+        printf("Déconnecté du serveur.\n");
+        return 0;
     }
-    return NULL;
+    if (rep == 1) {
+        printf("\n=== Match trouvé ! La partie commence… ===\n");
+        return 1;
+    }
+    return 0;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  AFFICHAGE                                                         [CES]
+ * AFFICHAGE                                                         [CES]
  * ════════════════════════════════════════════════════════════════════════════ */
 
 /* Reconstruit board local depuis data[0..63] puis affiche */
@@ -174,112 +164,85 @@ static void efface_marqueurs(void)
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  BOUCLE DE TOUR                                                    [CES]
+ * BOUCLE DE TOUR                                                    [CES]
  *
- *  Gère un tour complet en deux étapes :
- *    1. Sélection de la pièce → demande coups au serveur
- *    2. Saisie de la destination → envoi du coup
- *  Retourne 0 si le coup a été joué, -1 si la connexion est perdue.
+ * Gère un tour complet en deux étapes :
+ * 1. Sélection de la pièce → demande coups au serveur
+ * 2. Saisie de la destination → envoi du coup
+ * Retourne 0 si le coup a été joué, -1 si la connexion est perdue.
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static int tour_client(int sock, int player_id)
 {
     const char *couleur = (player_id == 1) ? "Blanc" : "Noir";
     Message msg_out, msg_in;
+    char buffer[128];
 
     while (1) {
-
-        /* ── Étape 1 : sélectionner la pièce ── */
         efface_marqueurs();
         display();
 
-        printf("\n\u25CF %s — Sélectionnez la pièce (LigneColonne, ex: 63) : ", couleur);
+        printf("\n\u25CF %s — Sélectionnez la pièce (LigneColonne) : ", couleur);
         fflush(stdout);
 
-        int src = -1;
-        if (scanf("%d", &src) != 1) { flush_stdin(); continue; }
-        flush_stdin();
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) return -1;
+        int src = atoi(buffer);
 
-        if (src < 0 || src > 77 || src % 10 > 7) {
-            printf("\u26A0 Coordonnées invalides (ex: 63 = ligne 6, colonne 3)\n");
-            printf("Appuyez sur Entrée…\n"); flush_stdin();
-            continue;
-        }
+        // Validation simple
+        if (src < 1) continue; 
 
-        /* Demander les coups légaux au serveur */
+        // Envoi demande de coups
         memset(&msg_out, 0, sizeof(msg_out));
-        msg_out.type    = MSG_DEMANDE_COUPS;
+        msg_out.type = MSG_DEMANDE_COUPS;
         msg_out.data[0] = src;
-        msg_out.nb      = 1;
         if (send_msg(sock, &msg_out) < 0) return -1;
-
         if (recv_msg(sock, &msg_in) < 0) return -1;
 
         if (msg_in.type == MSG_COUP_INVALIDE || msg_in.nb == 0) {
-            printf("\u26A0 Pas de pièce valide en %d ou aucun coup légal.\n", src);
-            printf("Appuyez sur Entrée…\n"); flush_stdin();
-            continue;
+            printf("\u26A0 Pièce invalide. Recommencez.\n");
+            continue; // Pas besoin de flush_stdin ici
         }
 
         affiche_coups_recus(&msg_in, src);
 
-        /* ── Étape 2 : saisir la destination ── */
-        printf("\n\u25CF %s — Destination (ou 0 pour rechoisir la pièce) : ", couleur);
+        printf("\n\u25CF Destination (0 pour annuler) : ");
         fflush(stdout);
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) return -1;
+        int dst = atoi(buffer);
 
-        int dst = -1;
-        if (scanf("%d", &dst) != 1) { flush_stdin(); continue; }
-        flush_stdin();
+        if (dst == 0) continue;
 
-        if (dst == 0) continue;   /* rechoisir la pièce */
-
-        if (dst < 0 || dst > 77 || dst % 10 > 7) {
-            printf("\u26A0 Coordonnées invalides.\n");
-            printf("Appuyez sur Entrée…\n"); flush_stdin();
-            continue;
-        }
-
-        /* Envoyer le coup */
         memset(&msg_out, 0, sizeof(msg_out));
-        msg_out.type    = MSG_JOUER_COUP;
+        msg_out.type = MSG_JOUER_COUP;
         msg_out.data[0] = src;
         msg_out.data[1] = dst;
-        msg_out.nb      = 2;
         if (send_msg(sock, &msg_out) < 0) return -1;
 
-        /* Attendre la confirmation du serveur */
+        // Attente de la réponse du serveur
         while (1) {
             if (recv_msg(sock, &msg_in) < 0) return -1;
 
+            // Ajoute ce print pour débugger :
+            printf("DEBUG: Message reçu type %d\n", msg_in.type);
+
             if (msg_in.type == MSG_COUP_INVALIDE) {
-                printf("\u26A0 Coup invalide, réessayez.\n");
-                printf("Appuyez sur Entrée…\n"); flush_stdin();
-                break;   /* retour à la sélection de pièce */
-            }
-            if (msg_in.type == MSG_COUP_OK) {
-                continue;   /* attendre MSG_ETAT_PLATEAU */
-            }
-            if (msg_in.type == MSG_ECHEC_BLANC) {
-                printf("\n\u26A0\u26A0  ÉCHEC AU ROI BLANC !  \u26A0\u26A0\n");
-                continue;
-            }
-            if (msg_in.type == MSG_ECHEC_NOIR) {
-                printf("\n\u26A0\u26A0  ÉCHEC AU ROI NOIR !  \u26A0\u26A0\n");
-                continue;
+                printf("\u26A0 Coup refusé par le serveur.\n");
+                break; // Sort de la boucle interne pour rechoisir la pièce
             }
             if (msg_in.type == MSG_ETAT_PLATEAU) {
-                efface_marqueurs();
                 affiche_plateau_recu(&msg_in);
-                printf("\u2705 Coup joué : %d → %d\n", src, dst);
-                return 0;   /* tour terminé avec succès */
+                return 0; // Tour fini
+            }
+            // Si c'est juste un message d'info (ECHEC, etc.), on continue d'attendre le PLATEAU
+            if (msg_in.type == MSG_COUP_OK || msg_in.type == MSG_ECHEC_BLANC || msg_in.type == MSG_ECHEC_NOIR) {
+                continue; 
             }
         }
-        /* coup invalide → reboucle sur la sélection de pièce */
     }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  BOUCLE DE JEU (après match trouvé)                               [CES + NEW]
+ * BOUCLE DE JEU (après match trouvé)                               [CES + NEW]
  * ════════════════════════════════════════════════════════════════════════════ */
 
 static void boucle_jeu(int sock)
@@ -326,7 +289,7 @@ static void boucle_jeu(int sock)
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
- *  MAIN                                                   [CV + CES + NEW]
+ * MAIN                                                   [CV + CES + NEW]
  * ════════════════════════════════════════════════════════════════════════════ */
 
 int main(int argc, char **argv)
@@ -357,15 +320,11 @@ int main(int argc, char **argv)
     printf("Connecté au serveur sur le port %s.\n", argv[1]);
     printf("Vous pouvez quitter avec '!'\n");
 
-    /* Lancer le listener [CV] */
-    pthread_t tid_listener;
-    pthread_create(&tid_listener, NULL, listener, NULL);
-    pthread_detach(tid_listener);
-
     char idJoueur[128], Mdp[128];
     char choix;
     int  connecte    = 0;
     int  jeuEnCours  = 1;
+    char buffer[256];
 
     while (jeuEnCours) {
 
@@ -373,15 +332,19 @@ int main(int argc, char **argv)
         /* [CV] */
         while (!connecte) {
             printf("Connexion / Inscription (c/i) : ");
-            scanf(" %c", &choix);
-            choix = tolower(choix);
-            flush_stdin();
+            if (fgets(buffer, sizeof(buffer), stdin) == NULL) { jeuEnCours = 0; break; }
+            choix = tolower(buffer[0]);
 
             if (choix == '!') { jeuEnCours = 0; break; }
 
             if (choix == 'i') {
-                printf("Identifiant : "); scanf("%s", idJoueur); flush_stdin();
-                printf("Mot de passe : "); scanf("%s", Mdp);    flush_stdin();
+                printf("Identifiant : "); 
+                fgets(idJoueur, sizeof(idJoueur), stdin);
+                idJoueur[strcspn(idJoueur, "\n")] = 0;
+                
+                printf("Mot de passe : "); 
+                fgets(Mdp, sizeof(Mdp), stdin);
+                Mdp[strcspn(Mdp, "\n")] = 0;
 
                 MessageClient msg = {'i', "", ""};
                 strncpy(msg.idJoueur, idJoueur, 128);
@@ -394,8 +357,13 @@ int main(int argc, char **argv)
                 else            printf("Identifiant déjà pris.\n");
             }
             else if (choix == 'c') {
-                printf("Identifiant : "); scanf("%s", idJoueur); flush_stdin();
-                printf("Mot de passe : "); scanf("%s", Mdp);    flush_stdin();
+                printf("Identifiant : "); 
+                fgets(idJoueur, sizeof(idJoueur), stdin);
+                idJoueur[strcspn(idJoueur, "\n")] = 0;
+                
+                printf("Mot de passe : "); 
+                fgets(Mdp, sizeof(Mdp), stdin);
+                Mdp[strcspn(Mdp, "\n")] = 0;
 
                 MessageClient msg = {'c', "", ""};
                 strncpy(msg.idJoueur, idJoueur, 128);
@@ -419,9 +387,8 @@ int main(int argc, char **argv)
         int choixValid = 0;
         while (!choixValid) {
             printf("Choix (j=jouer / s=spectateur / h=historique / !=quitter) : ");
-            scanf(" %c", &choix);
-            choix = tolower(choix);
-            flush_stdin();
+            if (fgets(buffer, sizeof(buffer), stdin) == NULL) { jeuEnCours = 0; break; }
+            choix = tolower(buffer[0]);
 
             if (choix == '!') {
                 jeuEnCours = 0;
@@ -448,29 +415,11 @@ int main(int argc, char **argv)
 
         /* ── Jouer ─────────────────────────────────────────────────────── */
         if (choix == 'j') {
-            printf("Recherche de partie… (appuyez sur 'r' + Entrée pour annuler)\n");
-            enRecherche = 1;
-            matchTrouve = 0;
-            
-            /* Attendre le match ou annulation par l'utilisateur [CV] */
-            char input[16];
-            while (enRecherche && !matchTrouve) {
-                if (fgets(input, sizeof(input), stdin)) {
-                    if (tolower(input[0]) == 'r') {
-                        printf("Recherche annulée.\n");
-                        enRecherche = 0;
-                    }
-                }
-            }
-
-            /* Si match trouvé, lancer la boucle de jeu [NEW → CES] */
-            if (matchTrouve) {
-                printf("match reçu \n");
+            /* Bloquer ici jusqu'à ce que le serveur forme un match [NEW] */
+            if (attendre_match(dsock_mec)) {
                 boucle_jeu(dsock_mec);
-                /* Après la partie, permettre de rejouer */
-                connecte   = 1;   /* rester connecté */
-                matchTrouve = 0;
             }
+            connecte   = 1;   /* rester connecté pour rejouer */
         }
         else if (choix == 's') {
             printf("Mode spectateur non implémenté.\n");
