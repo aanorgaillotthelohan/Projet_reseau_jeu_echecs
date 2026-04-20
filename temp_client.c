@@ -139,7 +139,7 @@ void* listener(void* arg){
 }
 
 
- int tour_client(int sock, int player_id, struct sockaddr_in adServ)
+ int tour_client(int sock, int player_id, struct sockaddr_in adServ, char * idJoueur)
 {
     const char *couleur = (player_id == 1) ? "Blanc" : "Noir";
     Message msg_out, msg_in;
@@ -211,9 +211,8 @@ void* listener(void* arg){
                         strftime(heure, sizeof(heure), " [%Hh:%Mm:%Ss]", timeinfo);
 
                         memset(message_udp_complete, 0, sizeof(message_udp_complete));
-                        char pid_str[16];
-                        snprintf(pid_str, sizeof(pid_str), "Joueur%d", player_id);
-                        strcpy(message_udp_complete, pid_str);
+
+                        strcat(message_udp_complete, idJoueur);
                         strcat(message_udp_complete, heure);
                         strcat(message_udp_complete, ": ");
 
@@ -546,7 +545,7 @@ int main(int argc, char **argv){
                 printf("\n══ C'est au tour des %s ══\n", couleur_tour);
 
                 if (player_id == my_player_id) {
-                    if (tour_client(dsock_mec, player_id, adServ) < 0) {
+                    if (tour_client(dsock_mec, player_id, adServ, idJoueur) < 0) {
                         printf("Connexion perdue.\n");
                         jeuEnCours = 0;
                         break;
