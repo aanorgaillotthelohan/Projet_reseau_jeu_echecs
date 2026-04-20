@@ -1,22 +1,42 @@
 CC      = gcc
-CFLAGS  = -Wall -Wextra -std=c11 -pedantic
-TARGET  = chess
+CFLAGS  = -Wall -Wextra -std=c11 -pedantic -lpthread -lm
 
-SRCS    = main.c globals.c utils.c display.c pieces.c moves.c players.c showcase.c
-OBJS    = $(SRCS:.c=.o)
+# Executables
+CLIENT  = client
+SERVER  = server
 
-all: $(TARGET)
+# Sources
+CLIENT_SRCS = temp_client.c globals.c moves.c pieces.c players.c display.c utils.c application.c 
+SERVER_SRCS = temp_serv.c globals.c moves.c pieces.c players.c display.c utils.c application.c salon.c
 
-$(TARGET): $(OBJS)
+# Objets
+CLIENT_OBJS = $(CLIENT_SRCS:.c=.o)
+SERVER_OBJS = $(SERVER_SRCS:.c=.o)
+
+# Default
+all: $(CLIENT) $(SERVER)
+
+# Client
+$(CLIENT): $(CLIENT_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
+# Server
+$(SERVER): $(SERVER_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
+
+# Compilation générique
 %.o: %.c chess.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Clean
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f *.o $(CLIENT) $(SERVER)
 
-run: $(TARGET)
-	./$(TARGET)
+# Run
+run-client: $(CLIENT)
+	./$(CLIENT)
 
-.PHONY: all clean run
+run-server: $(SERVER)
+	./$(SERVER)
+
+.PHONY: all clean run-client run-server

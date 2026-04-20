@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <time.h>
+#include <time.h>   
 #include <locale.h>
 #include <wchar.h>
 
@@ -80,8 +80,17 @@ int  is_square_attacked(int r, int c, int attacker_id);
 int  is_in_check(int player_id);
 
 // ─── Players ──────────────────────────────────────────────────────────────────
-void player_white(void);
-void player_black(void);
+typedef struct{
+    int socketJoueur;
+    char NomJoueur[20];
+    char Couleur[20];
+    bool rejoinsSalon;
+    char message[128];
+    int coupDuTour; 
+}joueur;
+
+int  player_white(joueur *j, int src, int dst);
+int  player_black(joueur *j, int src, int dst);
 int  check(int x, int y);
 int  check2(int x, int y);
 

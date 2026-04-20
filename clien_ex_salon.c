@@ -3,140 +3,279 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <sys/ipc.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <stddef.h>
-#include <sys/types.h>
-#include <pthread.h>
-#include <signal.h>
-#include <sys/msg.h>
-#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <sys/select.h>
-#include <termios.h>
+#include <locale.h>
+#include <wchar.h>
 
-pid_t pid_serv;
+#include "chess.h"
+#include "display.h"
+#include "pieces.h"
+#include "protocol.h"
 
-void gestion_erreur(int res, char* chaine){
-    if(res == -1 ){
-        printf("Erreur lors de %s \n", chaine);
-        exit(1);
+
+static void gestion_erreur(int res, const char *chaine)
+{
+    if (res == -1) { perror(chaine); exit(1); }
+}
+
+static int send_msg(int sock, const Message *m)
+{
+    ssize_t total = 0;
+    ssize_t size  = (ssize_t)sizeof(Message);
+    const char *ptr = (const char *)m;
+    while (total < size) {
+        ssize_t n = send(sock, ptr + total, (size_t)(size - total), 0);
+        if (n <= 0) return -1;
+        total += n;
     }
+    return 0;
 }
 
-void mortpere(){
-    printf("Non, tapez 'Quit' pour quitter \n");
+static int recv_msg(int sock, Message *m)
+{
+    ssize_t total = 0;
+    ssize_t size  = (ssize_t)sizeof(Message);
+    char *ptr = (char *)m;
+    while (total < size) {
+        ssize_t n = recv(sock, ptr + total, (size_t)(size - total), 0);
+        if (n <= 0) return -1;
+        total += n;
+    }
+    return 0;
 }
-void mortfils(){
+
+
+static void flush_stdin(void)
+{
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
 }
 
-
-void vraimort(){
-    exit(1);
-}
-
-
-int main(int argc, char **argv){
-    //côté LAUTRE LA JAIME PAS LE MOT CLIENT__________________________________________________
-    int dsock_mec = socket(PF_INET, SOCK_STREAM, 0);
-    gestion_erreur(dsock_mec, "socket de mec");
-    int dsock_udp = socket(PF_INET, SOCK_DGRAM, 0);
-    gestion_erreur(dsock_udp, "sock udp");
+static void affiche_plateau_recu(const Message *m)
+{
     
-    // Vérification basique des arguments
-    if (argc < 2) {
-        printf("Oublie du port: %s <port>\n", argv[0]);
-        exit(1);
+    for (int r = 0; r < 8; r++)
+        for (int c = 0; c < 8; c++)
+            board[r][c] = (char)m->data[r * 8 + c];
+
+    eliminated_pieces_white.start = NULL;
+    eliminated_pieces_black.start = NULL;
+
+    int nb_w = m->data[64];
+    int nb_b = m->data[65];
+    int pos  = 66;
+
+    for (int i = 0; i < nb_w && pos < MSG_DATA_MAX; i++, pos++)
+        insert_eliminated_list((char)m->data[pos], &eliminated_pieces_white);
+    for (int i = 0; i < nb_b && pos < MSG_DATA_MAX; i++, pos++)
+        insert_eliminated_list((char)m->data[pos], &eliminated_pieces_black);
+
+    display();
+}
+
+/* ─── Affiche les coups reçus et les marque sur le plateau local ─────────── */
+static void affiche_coups_recus(const Message *m, int src)
+{
+    printf("\u25B6 Coup(s) possible(s) avec cette pièce %d :\n  ", src);
+
+    /* Marquer les cases sur le plateau local */
+    for (int i = 0; i < m->nb; i++) {
+        int label = m->data[i] / 10;
+        int col   = m->data[i] % 10;
+        int r     = 7 - label;
+        printf("[%d%d] ", label, col);
+        if (board[r][col] == ' ')
+            board[r][col] = 'x';
     }
+    printf("\n");
+    display();
+
+    printf("\u25B6 Coup(s) possible(s) avec cette pièce %d :\n  ", src);
+    for (int i = 0; i < m->nb; i++)
+        printf("[%d%d] ", m->data[i] / 10, m->data[i] % 10);
+    printf("\n");
+}
+
+/* ─── Efface les marqueurs 'x' du plateau local ─────────────────────────── */
+static void efface_marqueurs(void)
+{
+    for (int r = 0; r < 8; r++)
+        for (int c = 0; c < 8; c++)
+            if (board[r][c] == 'x')
+                board[r][c] = ' ';
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ *  tour_client  —  gère un tour complet en 2 temps.
+ *  Retourne 0 si le coup a été joué, -1 si connexion perdue.
+ * ════════════════════════════════════════════════════════════════════════════ */
+static int tour_client(int sock, int player_id)
+{
+    const char *couleur = (player_id == 1) ? "Blanc" : "Noir";
+    Message msg_out, msg_in;
+
+    while (1) {
+
+        /* ── Étape 1 : saisie de la pièce source ── */
+        efface_marqueurs();
+        display();
+
+        printf("\n\u25CF %s — Selectionnez la pièce à jouer, suivre le format ligne puis colonne (ex: 11): ", couleur);
+        fflush(stdout);
+
+        int src = -1;
+        if (scanf("%d", &src) != 1) { flush_stdin(); continue; }
+        flush_stdin();
+
+        if (src < 0 || src > 77 || src % 10 > 7) {
+            printf("\u26A0 Coordonnees invalides. Format : LigneColonne (ex: 11)\n");
+            printf("Appuyez sur Entree...\n"); flush_stdin();
+            continue;
+        }
+
+        /* Envoyer la demande de coups au serveur */
+        memset(&msg_out, 0, sizeof(msg_out));
+        msg_out.type    = MSG_DEMANDE_COUPS;
+        msg_out.data[0] = src;
+        msg_out.nb      = 1;
+        if (send_msg(sock, &msg_out) < 0) return -1;
+
+        /* Recevoir la réponse */
+        if (recv_msg(sock, &msg_in) < 0) return -1;
+
+        if (msg_in.type == MSG_COUP_INVALIDE || msg_in.nb == 0) {
+            printf("\u26A0 Pas de piece valide en %d ou aucun coup legal.\n", src);
+            printf("Appuyez sur Entree...\n"); flush_stdin();
+            continue;
+        }
+
+        /* Afficher le plateau avec les coups possibles */
+        affiche_coups_recus(&msg_in, src);
+
+        /* ── Étape 2 : saisie de la destination ── */
+        printf("\n\u25CF %s — Entrez la destination (ou 0 pour changer de piece) : ", couleur);
+        fflush(stdout);
+
+        int dst = -1;
+        if (scanf("%d", &dst) != 1) { flush_stdin(); continue; }
+        flush_stdin();
+
+        if (dst == 0) continue;   /* rechoisir la pièce */
+
+        if (dst < 0 || dst > 77 || dst % 10 > 7) {
+            printf("\u26A0 Coordonnees invalides.\n");
+            printf("Appuyez sur Entree...\n"); flush_stdin();
+            continue;
+        }
+
+
+        memset(&msg_out, 0, sizeof(msg_out));
+        msg_out.type    = MSG_JOUER_COUP;
+        msg_out.data[0] = src;
+        msg_out.data[1] = dst;
+        msg_out.nb      = 2;
+        if (send_msg(sock, &msg_out) < 0) return -1;
+
+
+        while (1) {
+            if (recv_msg(sock, &msg_in) < 0) return -1;
+
+            if (msg_in.type == MSG_COUP_INVALIDE) {
+                printf("\u26A0 Coup invalide, reessayez.\n");
+                printf("Appuyez sur Entree...\n"); flush_stdin();
+                break;   
+            }
+            if (msg_in.type == MSG_COUP_OK) {
+                continue;   // attendre MSG_ETAT_PLATEAU 
+            }
+            if (msg_in.type == MSG_ECHEC_BLANC) {
+                printf("\n\u26A0\u26A0  ECHEC AU ROI BLANC !  \u26A0\u26A0\n");
+                continue;
+            }
+            if (msg_in.type == MSG_ECHEC_NOIR) {
+                printf("\n\u26A0\u26A0  ECHEC AU ROI NOIR !  \u26A0\u26A0\n");
+                continue;
+            }
+            if (msg_in.type == MSG_ETAT_PLATEAU) {
+                efface_marqueurs();
+                affiche_plateau_recu(&msg_in);
+                printf("\u2705 Coup joue : %d -> %d\n", src, dst);
+                return 0;   // tour terminé 
+            }
+        }
+        /* Si on arrive ici c'est un coup invalide → on reboucle */
+    }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ *  main
+ * ════════════════════════════════════════════════════════════════════════════ */
+int main(int argc, char **argv)
+{
+    setlocale(LC_ALL, "");
+
+    if (argc < 2) {
+        printf("Usage : %s <port>\n", argv[0]);
+        return 1;
+    }
+
+    /* Initialiser le board local (sera écrasé par le serveur) */
+    eliminated_pieces_white.start = NULL;
+    eliminated_pieces_black.start = NULL;
+    piece = (char *)malloc(sizeof(char));
+    board[7][7] = 'R';
 
     int port = atoi(argv[1]);
-    printf("%d \n",port);
-    
-    //le message qu'on vas envoyer
-    //EXEMPLE DE MESSAGE, NE VEUT RIEN DIRE
-    int message_mec[10];
-    for (int i = 0; i <10; i++){
-        message_mec[i] = i;
-    }
-    
-    //on crée l'adresse serveur à laquelle on veut envoyer:
-    struct sockaddr_in adServ ;
-    adServ.sin_family = AF_INET ;
-    adServ.sin_port = htons(port) ;
-    // Conversion explicite du résultat de inet_pton pour éviter warning (retour int)
-    int res = inet_pton(AF_INET, "10.111.3.119", &(adServ.sin_addr)) ;
-    gestion_erreur(res,"inet");
-    
-    socklen_t lgA = sizeof(struct sockaddr_in) ;
-    
-    //on demande une connection au serveur
-    // Cast explicite pour compatibilité type sockaddr
-    res = connect(dsock_mec, (struct sockaddr *) &adServ, lgA);
-    gestion_erreur(res, "connect");
-    
-    ssize_t res_ss_mec = send(dsock_mec, message_mec, sizeof(message_mec), 0) ;
-    gestion_erreur(res_ss_mec,"send");
-    
-    char message_udp[128];
-    char stockmessage[10][128];
-    fd_set set;
-    struct timeval timeout;
-    memset(stockmessage, 0, sizeof(stockmessage)); //pour initialiser à 0 apparemment
+    printf("Connexion au serveur sur le port %d...\n", port);
 
-    int pid_pere = getpid();
-    int f = fork();
-    int timer = 0;
-    
-    // Cast explicite (struct sockaddr *) pour chaque appel sendto/recvfrom
-    int res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adServ, lgA);
-    
-    if (f == 0){
-        // Processus fils (client qui écrit)
-        while(1){
-            signal(SIGINT,mortfils);
+    int sock = socket(PF_INET, SOCK_STREAM, 0);
+    gestion_erreur(sock, "socket");
 
-            fgets(message_udp, sizeof(message_udp), stdin); 
-            
-            if(strcmp(message_udp,"Quit\n")==0){
-                kill(pid_pere, SIGUSR1);
-                memset(message_udp, 0, sizeof(message_udp));
-                message_udp[0] = 'f';
-                // Cast explicite
-                res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adServ, lgA);
-                gestion_erreur(res_udp, "sendto f"); 
-                close(dsock_udp);
-                close(dsock_mec); 
-                exit(0);
-            }
-            // Cast explicite
-            res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adServ, lgA);
-            gestion_erreur(res_udp, "sendto chat");    
+    struct sockaddr_in adServ;
+    adServ.sin_family = AF_INET;
+    adServ.sin_port   = htons(port);
+    gestion_erreur(inet_pton(AF_INET, "127.0.0.1", &adServ.sin_addr), "inet_pton");
+    gestion_erreur(connect(sock, (struct sockaddr *)&adServ, sizeof(adServ)), "connect");
+
+    printf("Connecte au serveur.\n");
+
+    Message msg;
+
+    while (1) {
+        /* Recevoir l'état du plateau */
+        if (recv_msg(sock, &msg) < 0) {
+            printf("Connexion perdue.\n");
+            break;
         }
+        if (msg.type == MSG_BLANC){
+            printf("Couleur de cette partie : Blanc");
+        }
+        if (msg.type == MSG_NOIR){
+            printf("Couleur de cette partie : Noir");
+        }
+        if (msg.type == MSG_ETAT_PLATEAU) {
+            affiche_plateau_recu(&msg);
+            printf("affichage réussi\n");
+            continue;
+        }
+
+        if (msg.type == MSG_VOTRE_TOUR) {
+            int player_id = msg.data[0];
+            const char *couleur = (player_id == 1) ? "BLANC" : "NOIR";
+            printf("\n══ C'est au tour des %s ══\n", couleur);
+
+            if (tour_client(sock, player_id) < 0) {
+                printf("Connexion perdue.\n");
+                break;
+            }
+            continue;
+        }
+
+        /* Messages inattendus — on les ignore */
     }
-    else{
-        // Processus père (client qui lit)
-        while(1){
-            signal(SIGINT,mortpere);
-            signal(SIGUSR1,vraimort);
-            timer +=1;
-            
-            // Cast explicite pour recvfrom
-            ssize_t reschat = recvfrom(dsock_udp, stockmessage, sizeof(stockmessage), 0, (struct sockaddr *)&adServ, &lgA);
-            gestion_erreur(reschat, "recvfrom chat");
-            
-            printf("\033c" );
-            for (int i = 0; i < 10; i++){
-                if(strlen(stockmessage[i]) > 0){
-                    printf("message : %s \n", stockmessage[i]);
-                    fflush(stdout);
-                }
-            }
-            printf("-----------------\n");
-        }
-    } 
-    
-    close(dsock_udp);
-    close(dsock_mec);
+
+    close(sock);
+    free(piece);
+    return 0;
 }
