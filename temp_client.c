@@ -14,6 +14,8 @@
 #include "display.h"
 #include "pieces.h"
 #include "protocol.h"
+#include "salon.h"
+
 
 typedef struct {
     char choix;
@@ -199,9 +201,7 @@ void* listener(void* arg){
     }
 }
 
-
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv){
     setlocale(LC_ALL, "");
 
     if (argc < 2) { printf("Usage : %s <port>\n", argv[0]); return 1; }
@@ -272,7 +272,7 @@ int main(int argc, char **argv)
         char choixValid = 0;
 
         while(!choixValid){
-            printf("Choix (j=jouer / !=quitter) : ");
+            printf("Choix (j=jouer / !=quitter / s=spectateur / h=historitque) : ");
             scanf(" %c", &choix);
             choix = tolower(choix);
 
@@ -284,10 +284,83 @@ int main(int argc, char **argv)
             else if(choix == 'j'){
                 choixValid = 1;
             }
-            else {
-                printf("Choix invalide\n");
+            else if (choix == 's'){ // ajout du mode spectateur si problèmes problèmes ici
+
+                int nbSalons = 0;
+                int choixSalon;
+
+                if(recv(dsock_mec, &nbSalons, sizeof(nbSalons), 0) <= 0){
+                    printf("Erreur réception.\n");
+                    break;
+                }
+
+                printf("\n=== Salons disponibles (%d) ===\n", nbSalons);
+                for(int i = 0; i < nbSalons; i++){
+                    SalonNet s;
+                    if(recv(dsock_mec, &s, sizeof(SalonNet), 0) <= 0){
+                        printf("Erreur réception salon.\n");
+                        break;
+                    }
+                printf("Salon %d : %s vs %s (%d spectateurs)\n",s.idSalon, s.joueur1, s.joueur2, s.nbSpectateurs);          
+                }
+
+                printf("==============================\n");
+                printf("Entrer l'ID du salon à rejoindre (0 pour annuler) : ");
+                scanf("%d", &choixSalon);
+
+                // envoyer le choix au serveur
+                send(dsock_mec, &choixSalon, sizeof(choixSalon), 0);
+
+                if(choixSalon == 0){
+                    printf("Retour menu.\n");
+                    break;
+                }
+
+                // recevoir la réponse du serveur
+                int rep = 0;
+                if(recv(dsock_mec, &rep, sizeof(rep), 0) <= 0){
+                    printf("Erreur réception.\n");
+                    break;
+                }
+
+                if(rep == 1){
+                    printf("Vous avez rejoint le salon %d en tant que spectateur.\n", choixSalon);
+
+                    Message msg;
+                    if(recv_msg(dsock_mec, &msg) <= 0){
+                        printf("Erreur réception plateau.\n");
+                        return 0;
+                    }
+
+                    if(msg.type == MSG_ETAT_PLATEAU){
+                        affiche_plateau_recu(&msg);
+                    }
+
+                    while(1){
+                        if(recv_msg(dsock_mec, &msg) <= 0){
+                            printf("Déconnexion.\n");
+                            break;
+                        }
+
+                        if(msg.type == MSG_ETAT_PLATEAU){
+                            affiche_plateau_recu(&msg);
+                        }
+                        else if(msg.type == MSG_COUP_OK){
+                            printf("Un coup a été joué.\n");
+                        }
+                        else if(msg.type == MSG_ECHEC_BLANC){
+                            printf("Blanc en échec !\n");
+                        }
+                        else if(msg.type == MSG_ECHEC_NOIR){
+                            printf("Noir en échec !\n");
+                        }
+                    }
+
+                } else {
+                    printf("Salon invalide ou plein.\n");
+                }
+
             }
-        }
 
         if(!jeuEnCours) break;
 
@@ -308,7 +381,7 @@ int main(int argc, char **argv)
                         break;
                     }
                 }
-            }
+            }     
         }
 
         int my_player_id = 0;
@@ -326,23 +399,28 @@ int main(int argc, char **argv)
                 printf("Couleur de cette partie : Blanc\n");
                 continue;
             }
+            
             if (msg_jeu.type == MSG_NOIR) {
                 my_player_id = 2;
                 printf("Couleur de cette partie : Noir\n");
                 continue;
             }
+
             if (msg_jeu.type == MSG_ETAT_PLATEAU) {
                 affiche_plateau_recu(&msg_jeu);
                 continue;
             }
+
             if (msg_jeu.type == MSG_ECHEC_BLANC) {
                 printf("\n\u26A0\u26A0  ECHEC AU ROI BLANC !  \u26A0\u26A0\n");
                 continue;
             }
+
             if (msg_jeu.type == MSG_ECHEC_NOIR) {
                 printf("\n\u26A0\u26A0  ECHEC AU ROI NOIR !  \u26A0\u26A0\n");
                 continue;
             }
+            
             if (msg_jeu.type == MSG_VOTRE_TOUR) {
                 int player_id = msg_jeu.data[0];
                 const char *couleur_tour = (player_id == 1) ? "BLANC" : "NOIR";
@@ -357,9 +435,11 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+
         }
         break;
     }
+}
 
     close(dsock_mec);
     free(piece);
