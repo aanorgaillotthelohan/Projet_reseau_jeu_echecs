@@ -139,134 +139,134 @@ static void gere_partie(int dmec, int dmec_bis)
         second_co = 1;
     }
     printf("Début de la partie\n");
-while (1) {
-    int player_id;
-    joueur *j;
-    int sock_current, sock_other;
-
-    if (tour % 2 == 1) { // tour des blancs
-        player_id = 1;
-        if (first_co == 1) {
-            sock_current = dmec;
-            sock_other   = dmec_bis;
-        } else {
-            sock_current = dmec_bis;
-            sock_other   = dmec;
-        }
-        j = &j_blanc;
-    } else { // tour des noirs
-        player_id = 2;
-        if (first_co == 1) {
-            sock_current = dmec_bis;
-            sock_other   = dmec;
-        } else {
-            sock_current = dmec;
-            sock_other   = dmec_bis;
-        }
-        j = &j_noir;
-    }
-
-    /* ── 1. Informer le client de son tour ── */
-    memset(&msg_out, 0, sizeof(msg_out));
-    msg_out.type    = MSG_VOTRE_TOUR;
-    msg_out.data[0] = player_id;
-    msg_out.nb      = 1;
-
-    /* Envoyer aussi le plateau actuel */
-    Message plateau;
-    build_etat_plateau(&plateau);
-    if (send_msg(sock_current, &plateau) < 0) { printf("Client deco\n"); return; }
-    if (send_msg(sock_current, &msg_out) < 0) { printf("Client deco\n"); return; }
-
-    /* Boucle interne : gestion des coups */
     while (1) {
-        if (recv_msg(sock_current, &msg_in) < 0) {
-            printf("Client a déco\n");
-            return;
+        int player_id;
+        joueur *j;
+        int sock_current, sock_other;
+
+        if (tour % 2 == 1) { // tour des blancs
+            player_id = 1;
+            if (first_co == 1) {
+                sock_current = dmec;
+                sock_other   = dmec_bis;
+            } else {
+                sock_current = dmec_bis;
+                sock_other   = dmec;
+            }
+            j = &j_blanc;
+        } else { // tour des noirs
+            player_id = 2;
+            if (first_co == 1) {
+                sock_current = dmec_bis;
+                sock_other   = dmec;
+            } else {
+                sock_current = dmec;
+                sock_other   = dmec_bis;
+            }
+            j = &j_noir;
         }
 
-        if (msg_in.type == MSG_DEMANDE_COUPS) {
-            int src = msg_in.data[0];
-            int r1, c1;
-            memset(&msg_out, 0, sizeof(msg_out));
+        /* ── 1. Informer le client de son tour ── */
+        memset(&msg_out, 0, sizeof(msg_out));
+        msg_out.type    = MSG_VOTRE_TOUR;
+        msg_out.data[0] = player_id;
+        msg_out.nb      = 1;
 
-            if (parse_pos(src, &r1, &c1) < 0) {
-                msg_out.type = MSG_COUP_INVALIDE;
-                send_msg(sock_current, &msg_out);
-                continue;
+        /* Envoyer aussi le plateau actuel */
+        Message plateau;
+        build_etat_plateau(&plateau);
+        if (send_msg(sock_current, &plateau) < 0) { printf("Client deco\n"); return; }
+        if (send_msg(sock_current, &msg_out) < 0) { printf("Client deco\n"); return; }
+
+        /* Boucle interne : gestion des coups */
+        while (1) {
+            if (recv_msg(sock_current, &msg_in) < 0) {
+                printf("Client a déco\n");
+                return;
             }
 
-            int ok = (player_id == 1) ? compute_moves_white(r1, c1)
-                                       : compute_moves_black(r1, c1);
+            if (msg_in.type == MSG_DEMANDE_COUPS) {
+                int src = msg_in.data[0];
+                int r1, c1;
+                memset(&msg_out, 0, sizeof(msg_out));
 
-            if (ok < 0) {
-                msg_out.type = MSG_COUP_INVALIDE;
-                send_msg(sock_current, &msg_out);
-                continue;
-            }
+                if (parse_pos(src, &r1, &c1) < 0) {
+                    msg_out.type = MSG_COUP_INVALIDE;
+                    send_msg(sock_current, &msg_out);
+                    continue;
+                }
 
-            msg_out.type = MSG_REPONSE_COUPS;
-            msg_out.nb   = possible_moves_index;
-            for (int i = 0; i < possible_moves_index; i++) {
-                int ri = possible_moves[i] / 10;
-                int ci = possible_moves[i] % 10;
-                msg_out.data[i] = (7 - ri) * 10 + ci;
-            }
-            send_msg(sock_current, &msg_out);
-        }
-        else if (msg_in.type == MSG_JOUER_COUP) {
-            int src = msg_in.data[0];
-            int dst = msg_in.data[1];
-            int r1, c1;
+                int ok = (player_id == 1) ? compute_moves_white(r1, c1)
+                                        : compute_moves_black(r1, c1);
 
-            if (parse_pos(src, &r1, &c1) < 0) {
-                msg_out.type = MSG_COUP_INVALIDE;
-                send_msg(sock_current, &msg_out);
-                continue;
-            }
+                if (ok < 0) {
+                    msg_out.type = MSG_COUP_INVALIDE;
+                    send_msg(sock_current, &msg_out);
+                    continue;
+                }
 
-            int ok = (player_id == 1) ? compute_moves_white(r1, c1)
-                                       : compute_moves_black(r1, c1);
-
-            if (ok < 0) {
-                msg_out.type = MSG_COUP_INVALIDE;
-                send_msg(sock_current, &msg_out);
-                continue;
-            }
-
-            j->coupDuTour = src * 100 + dst;
-            int res = (player_id == 1) ? player_white(j, src, dst)
-                                       : player_black(j, src, dst);
-
-            if (res < 0) {
-                msg_out.type = MSG_COUP_INVALIDE;
-                send_msg(sock_current, &msg_out);
-                continue;
-            }
-
-            msg_out.type = MSG_COUP_OK;
-            msg_out.nb   = 0;
-            send_msg(sock_current, &msg_out);
-
-            // Signaler un échec éventuel
-            if (is_in_check(1)) {
-                msg_out.type = MSG_ECHEC_BLANC;
-                send_msg(sock_current, &msg_out);
-            }   
-            if (is_in_check(2)) {
-                msg_out.type = MSG_ECHEC_NOIR;
+                msg_out.type = MSG_REPONSE_COUPS;
+                msg_out.nb   = possible_moves_index;
+                for (int i = 0; i < possible_moves_index; i++) {
+                    int ri = possible_moves[i] / 10;
+                    int ci = possible_moves[i] % 10;
+                    msg_out.data[i] = (7 - ri) * 10 + ci;
+                }
                 send_msg(sock_current, &msg_out);
             }
+            else if (msg_in.type == MSG_JOUER_COUP) {
+                int src = msg_in.data[0];
+                int dst = msg_in.data[1];
+                int r1, c1;
 
-            build_etat_plateau(&plateau);
-            send_msg(sock_current, &plateau);
+                if (parse_pos(src, &r1, &c1) < 0) {
+                    msg_out.type = MSG_COUP_INVALIDE;
+                    send_msg(sock_current, &msg_out);
+                    continue;
+                }
 
-            printf("Tour %d joué : %d -> %d\n", tour, src, dst);
-            tour++;
-            break; // passe au tour suivant
+                int ok = (player_id == 1) ? compute_moves_white(r1, c1)
+                                        : compute_moves_black(r1, c1);
+
+                if (ok < 0) {
+                    msg_out.type = MSG_COUP_INVALIDE;
+                    send_msg(sock_current, &msg_out);
+                    continue;
+                }
+
+                j->coupDuTour = src * 100 + dst;
+                int res = (player_id == 1) ? player_white(j, src, dst)
+                                        : player_black(j, src, dst);
+
+                if (res < 0) {
+                    msg_out.type = MSG_COUP_INVALIDE;
+                    send_msg(sock_current, &msg_out);
+                    continue;
+                }
+
+                msg_out.type = MSG_COUP_OK;
+                msg_out.nb   = 0;
+                send_msg(sock_current, &msg_out);
+
+                // Signaler un échec éventuel
+                if (is_in_check(1)) {
+                    msg_out.type = MSG_ECHEC_BLANC;
+                    send_msg(sock_current, &msg_out);
+                }   
+                if (is_in_check(2)) {
+                    msg_out.type = MSG_ECHEC_NOIR;
+                    send_msg(sock_current, &msg_out);
+                }
+
+                build_etat_plateau(&plateau);
+                send_msg(sock_current, &plateau);
+
+                printf("Tour %d joué : %d -> %d\n", tour, src, dst);
+                tour++;
+                break; // passe au tour suivant
+            }
         }
     }
-}
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

@@ -13,26 +13,12 @@
 #include "pieces.h"
 #include "protocol.h"
 
-/*
- * clien_ex_salon.c — Client d'échecs intelligent.
- *
- * Le client :
- *   - reçoit le plateau du serveur et l'affiche localement
- *   - gère la saisie en 2 temps (source puis destination)
- *   - envoie MSG_DEMANDE_COUPS pour obtenir les cases accessibles
- *   - envoie MSG_JOUER_COUP pour jouer
- *   - ne contient aucune logique de jeu (tout est côté serveur)
- *
- * Usage : ./client <port>
- */
 
-/* ─── Utilitaire erreur ──────────────────────────────────────────────────── */
 static void gestion_erreur(int res, const char *chaine)
 {
     if (res == -1) { perror(chaine); exit(1); }
 }
 
-/* ─── Envoi / réception fiables ─────────────────────────────────────────── */
 static int send_msg(int sock, const Message *m)
 {
     ssize_t total = 0;
@@ -59,22 +45,20 @@ static int recv_msg(int sock, Message *m)
     return 0;
 }
 
-/* ─── Vide le buffer stdin ───────────────────────────────────────────────── */
+
 static void flush_stdin(void)
 {
     int c;
     while ((c = getchar()) != '\n' && c != EOF);
 }
 
-/* ─── Reconstruit et affiche le plateau reçu ────────────────────────────── */
 static void affiche_plateau_recu(const Message *m)
 {
-    /* Reconstruire board local depuis data[0..63] */
+    
     for (int r = 0; r < 8; r++)
         for (int c = 0; c < 8; c++)
             board[r][c] = (char)m->data[r * 8 + c];
 
-    /* Reconstruire les listes de pièces éliminées */
     eliminated_pieces_white.start = NULL;
     eliminated_pieces_black.start = NULL;
 
@@ -86,7 +70,6 @@ static void affiche_plateau_recu(const Message *m)
         insert_eliminated_list((char)m->data[pos], &eliminated_pieces_white);
     for (int i = 0; i < nb_b && pos < MSG_DATA_MAX; i++, pos++)
         insert_eliminated_list((char)m->data[pos], &eliminated_pieces_black);
-
 
     display();
 }
