@@ -127,10 +127,10 @@ typedef struct {
     ArgPartie *a = (ArgPartie *)arg;
     
     // MODIFICATION : On extrait l'id_salon de la structure 'a' pour l'utiliser localement
-    int id_salon = a->id_salon; 
+    a->id_salon = 1;
     
     // MODIFICATION : Utilisation de l'id_salon récupéré pour accéder au tableau Salons
-    Salon *s = Salons[id_salon - 1];
+    Salon *s = Salons[a->id_salon - 1];
 
     
     int dmec     = a->sock1;
@@ -138,8 +138,9 @@ typedef struct {
     free(a);
 
     char b[8][8];
-    eliminated_pieces_list ep_w = { NULL };
-    eliminated_pieces_list ep_b = { NULL };
+    // vérifier l'utilité des variables
+    //eliminated_pieces_list ep_w = { NULL };
+    //eliminated_pieces_list ep_b = { NULL };
 
 
     memset(b, ' ', sizeof(b));
@@ -229,7 +230,7 @@ typedef struct {
             close(dmec);
             close(dmec_bis);
 
-            return;
+            break;
         }
 
             if (msg_in.type == MSG_DEMANDE_COUPS) {
@@ -423,6 +424,8 @@ fin_partie:
                 JoueurEnAttente j1 = file_attente[file_debut];
                 JoueurEnAttente j2 = file_attente[file_debut + 1];
                 file_debut += 2;
+
+                NbSalons ++;
 
                 /* Créer l'objet Salon [SV] */
                 Salon *s = creeSalon(NbSalons, &j1, &j2);

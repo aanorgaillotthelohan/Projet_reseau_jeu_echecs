@@ -288,6 +288,10 @@ int main(int argc, char **argv){
 
                 int nbSalons = 0;
                 int choixSalon;
+                // ajout essai
+                MessageClient msgReq = {choix, "", ""};
+                strncpy(msgReq.idJoueur, idJoueur, 128);
+                send(dsock_mec, &msgReq, sizeof(msgReq), 0);
 
                 if(recv(dsock_mec, &nbSalons, sizeof(nbSalons), 0) <= 0){
                     printf("Erreur réception.\n");
@@ -327,21 +331,14 @@ int main(int argc, char **argv){
                     printf("Vous avez rejoint le salon %d en tant que spectateur.\n", choixSalon);
 
                     Message msg;
-                    if(recv_msg(dsock_mec, &msg) <= 0){
-                        printf("Erreur réception plateau.\n");
-                        return 0;
-                    }
-
-                    if(msg.type == MSG_ETAT_PLATEAU){
-                        affiche_plateau_recu(&msg);
-                    }
 
                     while(1){
+                        /* duplication ?
                         if(recv_msg(dsock_mec, &msg) <= 0){
-                            printf("Déconnexion.\n");
-                            break;
+                            printf("Erreur réception plateau.\n");
+                            return 0;
                         }
-
+                        */
                         if(msg.type == MSG_ETAT_PLATEAU){
                             affiche_plateau_recu(&msg);
                         }
@@ -353,6 +350,10 @@ int main(int argc, char **argv){
                         }
                         else if(msg.type == MSG_ECHEC_NOIR){
                             printf("Noir en échec !\n");
+                        }
+                        else if(recv_msg(dsock_mec, &msg) <= 0){
+                            printf("Déconnexion.\n");
+                            break;
                         }
                     }
 
