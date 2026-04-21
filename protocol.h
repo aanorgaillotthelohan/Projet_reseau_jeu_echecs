@@ -13,6 +13,7 @@
 #define MSG_VOTRE_TOUR      9
 #define MSG_BLANC 10
 #define MSG_NOIR 11
+#define MSG_PORT 12 
 #define MSG_VICTOIRE_FORFAIT 99
 
 #define MSG_DATA_MAX  200   /* taille max du tableau data */

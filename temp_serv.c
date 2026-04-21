@@ -49,6 +49,102 @@ int    NbSalons = 0;
 
 Salon* Salons[MAX_SALONS];
 
+
+//pour chat
+
+struct chat_arg{
+    int port;
+    int nb;
+    int ds;
+};
+
+#define NB_MAX 20
+
+int connait_client(struct sockaddr_in * cli, struct sockaddr_in * liste_clients, int nb_cli){
+    for (int i = 0; i < nb_cli; i++){
+        if (liste_clients[i].sin_addr.s_addr == cli->sin_addr.s_addr &&
+            liste_clients[i].sin_port == cli->sin_port)
+            return i;
+    }
+    return -1;
+}
+
+static void gestion_erreur(int res, const char *chaine) {
+    if (res == -1) { perror(chaine); exit(1); }
+}
+
+
+// Fonction pour le test de chat en thread
+void * chat(void * arg){
+    struct sockaddr_in liste_clients[NB_MAX];
+    int nb_cli = 0;
+    int dschat = ((struct chat_arg*)arg)->ds;
+
+    socklen_t lgA = sizeof(struct sockaddr_in);
+    char messagechat[128]; 
+    struct sockaddr_in adClient;
+    int chat_actif = 1;
+    char stockmessage[10][128];
+    memset(stockmessage, 0, sizeof(stockmessage));
+    int position_message = 0;
+
+    while(chat_actif){
+        // Reçoit seulement du mec qui est concerné par dschat, il faudrait une liste pour avoir tout le monde...
+        ssize_t reschat = recvfrom(dschat, messagechat, sizeof(messagechat), 0, (struct sockaddr*)&adClient, &lgA);
+        gestion_erreur((int)reschat, "chat res");
+
+        if (strcmp(messagechat, "f") == 0){
+            printf("Un chatteur est parti \n");
+            char tempo[128];
+            strcpy(tempo, stockmessage[0]);
+            memset(stockmessage[0], 0, sizeof(stockmessage[0]));
+            stockmessage[0][0]='f';
+            ssize_t res_udp = sendto(dschat, stockmessage, sizeof(stockmessage), 0, (struct sockaddr*)&adClient, lgA);
+            int p = connait_client(&adClient, liste_clients, nb_cli);
+            if (p != -1) {
+                nb_cli--;
+                for(int i = p; i < nb_cli; i++){
+                    liste_clients[i] = liste_clients[i+1];
+                }
+            }
+            strcpy(stockmessage[0], tempo);
+            
+        }
+        else{
+            // printf("message : %s\n",messagechat);
+            // Met le message dans la liste
+            strcpy(stockmessage[position_message], messagechat);
+            if (position_message < 10){
+                position_message += 1;
+            }
+            else{ 
+                for(int i = 0; i < 9; i++){
+                    strcpy(stockmessage[i], stockmessage[i+1]);
+                }
+                position_message = 10;
+                strcpy(stockmessage[9], messagechat);
+            }
+            if(connait_client(&adClient, liste_clients, nb_cli) == -1){
+                if (nb_cli < NB_MAX){
+                    liste_clients[nb_cli] = adClient;
+                    nb_cli++;
+                    printf("Client ajouté dans chat à la place %d \n", nb_cli-1);
+                }
+                else{
+                    printf("Client rejeté par manque de place.\n");
+                }
+            }
+
+            for(int i = 0; i < nb_cli; i++){
+                ssize_t res_udp = sendto(dschat, stockmessage, sizeof(stockmessage), 0, (struct sockaddr*)&liste_clients[i], lgA);
+                gestion_erreur((int)res_udp, "sendto udp chat");
+            }
+        }
+    }
+}
+
+//fin pour chat
+
  int send_msg(int sock, const Message *m)
 {
     ssize_t total = 0;
@@ -125,17 +221,43 @@ typedef struct {
  void *gere_partie(void *arg)
 {
     ArgPartie *a = (ArgPartie *)arg;
-    
+    int idsalon = a->id_salon;
     // MODIFICATION : On extrait l'id_salon de la structure 'a' pour l'utiliser localement
-    a->id_salon = 1;
+    //a->id_salon = 1;
     
     // MODIFICATION : Utilisation de l'id_salon récupéré pour accéder au tableau Salons
     Salon *s = Salons[a->id_salon - 1];
 
-    
+     //chat lancé:
+    pthread_t chat_t;
+    struct sockaddr_in ad; // lieu de stock de la socket
+    ad.sin_family = AF_INET;
+    ad.sin_addr.s_addr =  INADDR_ANY ;
+    ad.sin_port = htons(PORT + idsalon);
+
+    int dsockUdp = socket(PF_INET, SOCK_DGRAM, 0);
+    int res = bind(dsockUdp, (struct sockaddr*)&ad, sizeof(ad));
+    gestion_erreur(res, "bind Udp");
+
+    struct chat_arg arg_chat;
+    arg_chat.port = PORT;
+    arg_chat.ds = dsockUdp;
+    pthread_create(&chat_t, NULL, chat, &arg_chat); 
+
     int dmec     = a->sock1;
     int dmec_bis = a->sock2;
     free(a);
+
+    Message msg_in, msg_out, plateau;
+
+    memset(&msg_out, 0, sizeof(msg_out));
+
+    msg_out.type = MSG_PORT;
+    msg_out.data[0] = idsalon;
+    msg_out.nb = 1;
+    send_msg(dmec,&msg_out);
+    send_msg(dmec_bis,&msg_out );
+    
 
     char b[8][8];
     // vérifier l'utilité des variables
@@ -451,6 +573,7 @@ fin_partie:
                 ArgPartie *ap = malloc(sizeof(ArgPartie));
                 ap->sock1 = j1.sock;
                 ap->sock2 = j2.sock;
+                ap->id_salon = NbSalons;
                 strncpy(ap->nom1, j1.nom, 128);
                 strncpy(ap->nom2, j2.nom, 128);
 

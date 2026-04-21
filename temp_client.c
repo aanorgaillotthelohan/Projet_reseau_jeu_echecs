@@ -16,6 +16,7 @@
 #include "protocol.h"
 #include "salon.h"
 
+#define PORT 1061
 
 typedef struct {
     char choix;
@@ -25,6 +26,9 @@ typedef struct {
 
 int dsock_mec;
 volatile int enRecherche = 0;
+int inchat = 0;
+int idsalon = 0;
+
 
 void gestion_erreur(int res, const char *chaine)
 {
@@ -70,6 +74,111 @@ void gestion_erreur(int res, const char *chaine)
     printf("%s", prompt); fflush(stdout);
     if (!fgets(dest, maxlen, stdin)) { dest[0] = '\0'; return; }
     dest[strcspn(dest, "\n")] = '\0';
+}
+
+void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJoueur){
+
+    int dsock_udp = socket(PF_INET, SOCK_DGRAM, 0);
+    gestion_erreur(dsock_udp, "sock udp");
+
+    printf("chat\n");
+    *inchat = 1;
+    char message_udp[128];
+    char stockmessage[10][128];
+    char message_udp_complete[128];
+    memset(stockmessage, 0, sizeof(stockmessage)); //pour initialiser à 0 apparemment
+    memset(message_udp, 0, sizeof(message_udp));
+    memset(message_udp, 0, sizeof(message_udp_complete));
+    int pid_pere = getpid();
+    
+    int f = fork();
+    int timer = 0;
+    
+    struct sockaddr_in adUdp; // lieu de stock de la socket
+    adUdp.sin_family = AF_INET;
+    adUdp.sin_addr.s_addr =  adServ.sin_addr.s_addr ;
+    adUdp.sin_port = htons(PORT + idsalon);
+
+    size_t lgA = sizeof(adUdp);
+    
+    if (f == 0){
+        //message vide qui initialise la communication
+        int res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adUdp, lgA);
+        // Processus fils (client qui écrit)
+        time_t rawtime;
+        struct tm * timeinfo;
+        while(*inchat){
+            //signal(SIGINT,mortfils);
+            
+            //printf("-----------------\n");
+
+            fgets(message_udp, sizeof(message_udp), stdin); 
+            
+            if(strcmp(message_udp,"Quit\n")==0){
+                //kill(pid_pere, SIGUSR1);
+                memset(message_udp, 0, sizeof(message_udp));
+                message_udp[0] = 'f';
+                // Cast explicite
+                res_udp = sendto(dsock_udp, &message_udp, sizeof(message_udp), 0, (struct sockaddr *)&adUdp, lgA);
+                gestion_erreur(res_udp, "sendto f"); 
+                close(dsock_udp);
+                exit(0);
+            }
+            if(strcmp(message_udp,"\n")!=0){
+                time ( &rawtime );
+                timeinfo = localtime ( &rawtime );
+                char heure[32];
+                strftime(heure, sizeof(heure), " [%Hh:%Mm:%Ss]", timeinfo);
+
+                memset(message_udp_complete, 0, sizeof(message_udp_complete));
+
+                strcat(message_udp_complete, idJoueur);
+                strcat(message_udp_complete, heure);
+                strcat(message_udp_complete, ": ");
+
+                strcat(message_udp_complete, message_udp);
+
+                res_udp = sendto(dsock_udp, &message_udp_complete, sizeof(message_udp_complete), 0, (struct sockaddr *)&adUdp, lgA);
+                gestion_erreur(res_udp, "sendto chat");    
+            }
+
+        }
+    }
+    else{
+        // Processus père (client qui lit)
+        while(*inchat){
+            //signal(SIGINT,mortpere);
+            //signal(SIGUSR1,vraimort);
+            timer +=1;
+            
+            efface_marqueurs();
+            display();
+            // Cast explicite pour recvfrom
+            ssize_t reschat = recvfrom(dsock_udp, stockmessage, sizeof(stockmessage), 0, (struct sockaddr *)&adUdp, &lgA);
+            gestion_erreur(reschat, "recvfrom chat");
+            
+            if(strcmp(stockmessage[0],"f") == 0){
+                *inchat = 0;
+                printf("Quitte chat\n");
+                break;
+            }
+            else{
+                printf("\033c" );
+                //display();
+                for (int i = 0; i < 10; i++){
+                    if(strlen(stockmessage[i]) > 1){
+                        printf("%s \n", stockmessage[i]);
+                        fflush(stdout);
+                    }
+                }
+                printf("-----------------'Quit' pour revenir au jeu\n");
+            }
+
+
+        }
+    } 
+    
+    close(dsock_udp);
 }
 
 // Thread pour écouter le serveur
@@ -135,69 +244,76 @@ void* listener(void* arg){
 }
 
 
- int tour_client(int sock, int player_id)
+ int tour_client(int sock, int player_id, struct sockaddr_in adServ, char * idJoueur)
 {
     const char *couleur = (player_id == 1) ? "Blanc" : "Noir";
     Message msg_out, msg_in;
     char buf[64];
+    socklen_t lgA = sizeof(struct sockaddr_in) ;
 
     while (1) {
         efface_marqueurs();
         display();
 
-        printf("\n\u25CF %s — Selectionnez la pièce à jouer, suivre le format ligne puis colonne (ex: 11): ", couleur);
+        printf("\n\u25CF %s — Selectionnez la pièce à jouer, suivre le format ligne puis colonne (ex: 11) ou 666 pour chat: ", couleur);
         fflush(stdout);
         if (!fgets(buf, sizeof(buf), stdin)) return -1;
         int src = atoi(buf);
 
-        if (src < 0 || src > 77 || src % 10 > 7) {
-            printf("\u26A0 Coordonnees invalides. Format : LigneColonne (ex: 11)\n");
-            continue;
+        if (src == 666){
+            gere_chat(&inchat, adServ,idsalon,idJoueur);
         }
-
-        memset(&msg_out, 0, sizeof(msg_out));
-        msg_out.type = MSG_DEMANDE_COUPS; msg_out.data[0] = src; msg_out.nb = 1;
-        if (send_msg(sock, &msg_out) < 0) return -1;
-        if (recv_msg(sock, &msg_in)  < 0) return -1;
-
-        if (msg_in.type == MSG_COUP_INVALIDE || msg_in.nb == 0) {
-            printf("\u26A0 Pas de piece valide en %d ou aucun coup legal.\n", src);
-            continue;
-        }
-
-        affiche_coups_recus(&msg_in, src);
-
-        printf("\n\u25CF %s — Entrez la destination (ou 0 pour changer de piece) : ", couleur);
-        fflush(stdout);
-        if (!fgets(buf, sizeof(buf), stdin)) return -1;
-        int dst = atoi(buf);
-
-        if (dst == 0) continue;
-
-        if (dst < 0 || dst > 77 || dst % 10 > 7) {
-            printf("\u26A0 Coordonnees invalides.\n");
-            continue;
-        }
-
-        memset(&msg_out, 0, sizeof(msg_out));
-        msg_out.type = MSG_JOUER_COUP; msg_out.data[0] = src; msg_out.data[1] = dst; msg_out.nb = 2;
-        if (send_msg(sock, &msg_out) < 0) return -1;
-
-        while (1) {
-            if (recv_msg(sock, &msg_in) < 0) return -1;
-            if (msg_in.type == MSG_COUP_INVALIDE) {
-                printf("\u26A0 Coup invalide, reessayez.\n"); break;
+        else{
+            if (src < 0 || src > 77 || src % 10 > 7) {
+                printf("\u26A0 Coordonnees invalides. Format : LigneColonne (ex: 11)\n");
+                continue;
             }
-            if (msg_in.type == MSG_COUP_OK)      { continue; }
-            if (msg_in.type == MSG_ECHEC_BLANC)  { printf("\n\u26A0\u26A0  ECHEC AU ROI BLANC !  \u26A0\u26A0\n"); continue; }
-            if (msg_in.type == MSG_ECHEC_NOIR)   { printf("\n\u26A0\u26A0  ECHEC AU ROI NOIR !  \u26A0\u26A0\n");  continue; }
-            if (msg_in.type == MSG_ETAT_PLATEAU) {
-                efface_marqueurs();
-                affiche_plateau_recu(&msg_in);
-                printf("\u2705 Coup joue : %d -> %d\n", src, dst);
-                return 0;
+
+            memset(&msg_out, 0, sizeof(msg_out));
+            msg_out.type = MSG_DEMANDE_COUPS; msg_out.data[0] = src; msg_out.nb = 1;
+            if (send_msg(sock, &msg_out) < 0) return -1;
+            if (recv_msg(sock, &msg_in)  < 0) return -1;
+
+            if (msg_in.type == MSG_COUP_INVALIDE || msg_in.nb == 0) {
+                printf("\u26A0 Pas de piece valide en %d ou aucun coup legal.\n", src);
+                continue;
+            }
+
+            affiche_coups_recus(&msg_in, src);
+
+            printf("\n\u25CF %s — Entrez la destination (ou 0 pour changer de piece) : ", couleur);
+            fflush(stdout);
+            if (!fgets(buf, sizeof(buf), stdin)) return -1;
+            int dst = atoi(buf);
+
+            if (dst == 0) continue;
+
+            if (dst < 0 || dst > 77 || dst % 10 > 7) {
+                printf("\u26A0 Coordonnees invalides.\n");
+                continue;
+            }
+
+            memset(&msg_out, 0, sizeof(msg_out));
+            msg_out.type = MSG_JOUER_COUP; msg_out.data[0] = src; msg_out.data[1] = dst; msg_out.nb = 2;
+            if (send_msg(sock, &msg_out) < 0) return -1;
+
+            while (1) {
+                if (recv_msg(sock, &msg_in) < 0) return -1;
+                if (msg_in.type == MSG_COUP_INVALIDE) {
+                    printf("\u26A0 Coup invalide, reessayez.\n"); break;
+                }
+                if (msg_in.type == MSG_COUP_OK)      { continue; }
+                if (msg_in.type == MSG_ECHEC_BLANC)  { printf("\n\u26A0\u26A0  ECHEC AU ROI BLANC !  \u26A0\u26A0\n"); continue; }
+                if (msg_in.type == MSG_ECHEC_NOIR)   { printf("\n\u26A0\u26A0  ECHEC AU ROI NOIR !  \u26A0\u26A0\n");  continue; }
+                if (msg_in.type == MSG_ETAT_PLATEAU) {
+                    efface_marqueurs();
+                    affiche_plateau_recu(&msg_in);
+                    printf("\u2705 Coup joue : %d -> %d\n", src, dst);
+                    return 0;
+                }
             }
         }
+        
     }
 }
 
@@ -329,7 +445,7 @@ int main(int argc, char **argv){
 
                 if(rep == 1){
                     printf("Vous avez rejoint le salon %d en tant que spectateur.\n", choixSalon);
-
+                    idsalon = choixSalon;
                     Message msg;
 
                     while(1){
@@ -401,6 +517,10 @@ int main(int argc, char **argv){
                 continue;
             }
             
+            if (msg_jeu.type == MSG_PORT){
+                idsalon = msg_jeu.data[0];
+            }
+
             if (msg_jeu.type == MSG_NOIR) {
                 my_player_id = 2;
                 printf("Couleur de cette partie : Noir\n");
@@ -428,7 +548,7 @@ int main(int argc, char **argv){
                 printf("\n══ C'est au tour des %s ══\n", couleur_tour);
 
                 if (player_id == my_player_id) {
-                    if (tour_client(dsock_mec, player_id) < 0) {
+                    if (tour_client(dsock_mec, player_id, adServ, idJoueur) < 0) {
                         printf("Connexion perdue.\n");
                         jeuEnCours = 0;
                         break;
