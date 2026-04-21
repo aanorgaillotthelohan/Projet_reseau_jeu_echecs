@@ -416,23 +416,27 @@ typedef struct {
 
                 memset(&msg_out, 0, sizeof(msg_out));
                 msg_out.type = MSG_COUP_OK;
-                for(int i = 0; i < s->nbClients; i++){
-                    send_msg(s->Clients[i].socketJoueur, &msg_out);
+                send_msg(sock_current, &msg_out);
+                for(int i = 0; i < s->nbSpectateurs; i++){
+                    send_msg(s->ListeSpectateurs[i].socketJoueur, &msg_out);
                 }
 
                 if (is_in_check(1)) {
                     memset(&msg_out, 0, sizeof(msg_out));
                     msg_out.type = MSG_ECHEC_BLANC;
-
-                    for(int i = 0; i < s->nbClients; i++){
-                        send_msg(s->Clients[i].socketJoueur, &msg_out);
+                    send_msg(sock_current, &msg_out);
+                    send_msg(sock_other,   &msg_out);
+                    for(int i = 0; i < s->nbSpectateurs; i++){
+                        send_msg(s->ListeSpectateurs[i].socketJoueur, &msg_out);
                     }
                 }
                 if (is_in_check(2)) {
                     memset(&msg_out, 0, sizeof(msg_out));
                     msg_out.type = MSG_ECHEC_NOIR;
-                    for(int i = 0; i < s->nbClients; i++){
-                        send_msg(s->Clients[i].socketJoueur, &msg_out);
+                    send_msg(sock_current, &msg_out);
+                    send_msg(sock_other,   &msg_out);
+                    for(int i = 0; i < s->nbSpectateurs; i++){
+                        send_msg(s->ListeSpectateurs[i].socketJoueur, &msg_out);
                     }
                 }
 
@@ -440,12 +444,12 @@ typedef struct {
                                    &eliminated_pieces_white,
                                    &eliminated_pieces_black,
                                    board);
-                for(int i = 0; i < s->nbClients; i++){
-                    send_msg(s->Clients[i].socketJoueur, &msg_out);
-                }
+                send_msg(sock_current, &plateau);
+                send_msg(sock_other,   &plateau);
+
                 // envoyer aux spectateurs
-                for(int i = 0; i < s->nbClients; i++){
-                    send_msg(s->Clients[i].socketJoueur, &plateau);
+                for(int i = 0; i < s->nbSpectateurs; i++){
+                    send_msg(s->ListeSpectateurs[i].socketJoueur, &plateau);
                 }
                 printf("[partie] Tour %d joué : %d -> %d\n", tour, src, dst);
                 tour++;
@@ -456,9 +460,8 @@ typedef struct {
 
 fin_partie:
     printf("Partie terminée. En attente d'une nouvelle connexion...\n");
-    for(int i = 0; i < s->nbClients; i++){
-        close(s->Clients[i].socketJoueur);
-    }
+    close(dmec);
+    close(dmec_bis);
     return NULL;
 }
 
@@ -592,18 +595,22 @@ fin_partie:
         }else if(msg.choix == 's'){
             pthread_mutex_lock(&mutexJoueurs);
 
-            // 1. Envoi de la liste des salons (inchangé)
+            // on envoie le nombre de salons en ligne
             send(sockClient, &NbSalons, sizeof(NbSalons), 0);
+
+            // on envoie tous les salons
             for(int i = 0; i < NbSalons; i++){
                 SalonNet sn;
                 sn.idSalon = Salons[i]->idSalon;
                 sn.nbSpectateurs = Salons[i]->nbSpectateurs;
+
                 strncpy(sn.joueur1, Salons[i]->Joueur1.NomJoueur, 31);
                 strncpy(sn.joueur2, Salons[i]->Joueur2.NomJoueur, 31);
+
                 send(sockClient, &sn, sizeof(sn), 0);
             }
 
-            // 2. Réception du choix
+            // on recois le choix du client
             int idChoisi;
             if(recv(sockClient, &idChoisi, sizeof(idChoisi), 0) <= 0){
                 printf("Erreur réception choix salon\n");
@@ -612,9 +619,10 @@ fin_partie:
             }
 
             int rep = 0;
+
+            // On vérifie que le salon n'est pas plein
             Salon* s = NULL;
 
-            // 3. Recherche du salon
             for(int i = 0; i < NbSalons; i++){
                 if(Salons[i] != NULL && Salons[i]->idSalon == idChoisi){
                     s = Salons[i];
@@ -622,39 +630,42 @@ fin_partie:
                 }
             }
 
-            // 4. Vérification et ajout
-            if(s != NULL && s->nbClients < 22){
-                joueur* spec = creejoueur(sockClient, msg.idJoueur);
-                s->Clients[s->nbClients] = *spec;
-                s->nbClients++;
-                s->nbSpectateurs++;
-                printf("Spectateur %s ajouté au salon %d\n", spec->NomJoueur, s->idSalon);
-                rep = 1; // Succès
+            if(s != NULL){
+                if(s->nbSpectateurs < 20){
+
+                    // créer le spectateur
+                    joueur* spec = creejoueur(sockClient, msg.idJoueur);
+
+                    // ajouter à la liste
+                    s->ListeSpectateurs[s->nbSpectateurs] = *spec;
+                    s->nbSpectateurs++;
+
+                    printf("Spectateur %s ajouté au salon %d\n",
+                        spec->NomJoueur, s->idSalon);
+
+                    rep = 1; // succès
+                    
+                } else {
+                    printf("Salon %d plein\n", s->idSalon);
+                    rep = 0;
+                }
             } else {
-                rep = 0; // Échec
+                printf("ID salon invalide : %d\n", idChoisi);
+                rep = 0;
             }
 
-            // --- ETAPE CRUCIALE : ON ENVOIE D'ABORD LA REPONSE ---
+            // on envoie la réponse au client
             send(sockClient, &rep, sizeof(rep), 0);
 
-            // --- ETAPE SUIVANTE : SI SUCCÈS, ON ENVOIE LE PLATEAU ---
-            if (rep == 1) {
-                printf("Envoi du plateau initial au spectateur...\n");
-                Message initial_plateau;
-                // On construit le message avec le board actuel
-                build_etat_plateau(&initial_plateau, &eliminated_pieces_white, &eliminated_pieces_black, board);
-                
-                if (send_msg(sockClient, &initial_plateau) == -1) {
-                    perror("Erreur envoi plateau initial");
-                }
-            }
+            pthread_mutex_unlock(&mutexJoueurs);
+        }
         /* ── Historique (non implémenté) ── [SV] */
         else if (msg.choix == 'h') {
             printf("[client %d] Historique non implémenté\n", sockClient);
         }
         
     }
-    }
+
     close(sockClient);
     return NULL;
 }
