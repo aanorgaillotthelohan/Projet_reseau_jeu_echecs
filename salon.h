@@ -17,6 +17,8 @@ typedef struct {
     int    nbSpectateurs;
     coup   ListeCoups[51];
     int    nbCoups;
+    int nbClients;
+    joueur Clients[22];
 } Salon;
 
 Salon *creeSalon(int id, joueur *j1, joueur *j2);

@@ -75,6 +75,12 @@ void gestion_erreur(int res, const char *chaine)
     if (!fgets(dest, maxlen, stdin)) { dest[0] = '\0'; return; }
     dest[strcspn(dest, "\n")] = '\0';
 }
+void efface_marqueurs(void)
+{
+    for (int r = 0; r < 8; r++)
+        for (int c = 0; c < 8; c++)
+            if (board[r][c] == 'x') board[r][c] = ' ';
+}
 
 void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJoueur){
 
@@ -235,14 +241,6 @@ void* listener(void* arg){
         printf("[%d%d] ", m->data[i] / 10, m->data[i] % 10);
     printf("\n");
 }
-
- void efface_marqueurs(void)
-{
-    for (int r = 0; r < 8; r++)
-        for (int c = 0; c < 8; c++)
-            if (board[r][c] == 'x') board[r][c] = ' ';
-}
-
 
  int tour_client(int sock, int player_id, struct sockaddr_in adServ, char * idJoueur)
 {
@@ -449,34 +447,22 @@ int main(int argc, char **argv){
                     Message msg;
 
                     while(1){
-                        /* duplication ?
-                        if(recv_msg(dsock_mec, &msg) <= 0){
-                            printf("Erreur réception plateau.\n");
-                            return 0;
-                        }
-                        */
-                        if(msg.type == MSG_ETAT_PLATEAU){
-                            affiche_plateau_recu(&msg);
-                        }
-                        else if(msg.type == MSG_COUP_OK){
-                            printf("Un coup a été joué.\n");
-                        }
-                        else if(msg.type == MSG_ECHEC_BLANC){
-                            printf("Blanc en échec !\n");
-                        }
-                        else if(msg.type == MSG_ECHEC_NOIR){
-                            printf("Noir en échec !\n");
-                        }
-                        else if(recv_msg(dsock_mec, &msg) <= 0){
-                            printf("Déconnexion.\n");
+                        if (recv_msg(dsock_mec, &msg) <= 0) {
                             break;
                         }
-                    }
 
-                } else {
+                        // On traite le message selon son type
+                        if (msg.type == MSG_ETAT_PLATEAU) {
+                            // Effacer l'écran pour un affichage propre
+                            printf("\033[H\033[J"); 
+                            printf("--- VUE SPECTATEUR ---\n");
+                            affiche_plateau_recu(&msg);
+                            gere_chat(&inchat, adServ,idsalon,idJoueur);
+                        }
+                    }          
+                }else {
                     printf("Salon invalide ou plein.\n");
                 }
-
             }
 
         if(!jeuEnCours) break;
