@@ -429,9 +429,8 @@ typedef struct {
                     send_msg(s->Clients[i].socketJoueur, &msg_out);
                 }
 
-                /* --- Après chaque coup joué --- */
                 if (is_checkmate(1)) {
-                    /* Blanc est mat → Noir gagne */
+
                     const char *nom_gagnant_n = (sock_noir == dmec) ? nom_joueur1 : nom_joueur2;
                     const char *nom_perdant_b = (sock_blanc == dmec) ? nom_joueur1 : nom_joueur2;
 
@@ -440,7 +439,7 @@ typedef struct {
                     for (int i = 0; i < s->nbClients; i++)
                         send_msg(s->Clients[i].socketJoueur, &msg_out);
 
-                    /* MSG_FIN_PARTIE : 1=victoire, 2=défaite */
+                    // MSG_FIN_PARTIE : 1=victoire, 2=défaite 
                     Message fin_g, fin_p;
                     memset(&fin_g, 0, sizeof(fin_g)); memset(&fin_p, 0, sizeof(fin_p));
                     fin_g.type = MSG_FIN_PARTIE; fin_g.data[0] = 1; fin_g.nb = 1;
@@ -455,8 +454,15 @@ typedef struct {
 
                     build_etat_plateau(&plateau, &eliminated_pieces_white,
                                        &eliminated_pieces_black, board);
-                    for (int i = 0; i < s->nbClients; i++)
+                    for (int i = 0; i < s->nbClients; i++){
                         send_msg(s->Clients[i].socketJoueur, &plateau);
+                    }
+                    msg_out.type = MSG_ECHEC_ET_MAT_BLANC;
+                    send_msg(sock_blanc, &msg_out);
+                    send_msg(sock_noir,  &msg_out);
+
+                    send_msg(sock_noir,  &fin_g);   // victoire
+                    send_msg(sock_blanc, &fin_p);   // défaite
                     goto fin_partie;
 
                 } else if (is_in_check(1)) {
@@ -490,14 +496,23 @@ typedef struct {
 
                     build_etat_plateau(&plateau, &eliminated_pieces_white,
                                        &eliminated_pieces_black, board);
-                    for (int i = 0; i < s->nbClients; i++)
+                    for (int i = 0; i < s->nbClients; i++){
                         send_msg(s->Clients[i].socketJoueur, &plateau);
+                    }
+                    send_msg(sock_blanc, &msg_out);
+                    send_msg(sock_noir,  &msg_out);
+
+                    send_msg(sock_noir,  &fin_g);   // victoire
+                    send_msg(sock_blanc, &fin_p);   // défaite
                     goto fin_partie;
-                }   else if (is_in_check(2)) {
+                    }
+                    else if (is_in_check(2)) {
                     memset(&msg_out, 0, sizeof(msg_out));
                     msg_out.type = MSG_ECHEC_NOIR;
-                    for (int i = 0; i < s->nbClients; i++)
+                    for (int i = 0; i < s->nbClients; i++){
                         send_msg(s->Clients[i].socketJoueur, &msg_out);
+                    }
+                    
                 }
 
                 build_etat_plateau(&plateau,

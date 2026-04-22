@@ -305,7 +305,15 @@ void* listener(void* arg){
                 if (msg_in.type == MSG_ECHEC_BLANC)  { printf("\nECHEC AU ROI BLANC ! \n"); continue; }
                 if (msg_in.type == MSG_ECHEC_NOIR)   { printf("\nECHEC AU ROI NOIR !  \n");  continue; }
                 if (msg_in.type == MSG_ECHEC_ET_MAT_BLANC)  { printf("\nECHEC ET MAT AU ROI BLANC ! \n"); break; }
-                if (msg_in.type == MSG_ECHEC_NOIR)   { printf("\n\u26A0\u26A0  ECHEC ET MAT AU ROI NOIR !  \u26A0\u26A0\n");  continue; }
+                if (msg_in.type == MSG_ECHEC_ET_MAT_NOIR)   { printf("\n\u26A0\u26A0  ECHEC ET MAT AU ROI NOIR !  \u26A0\u26A0\n");  continue; }
+                if (msg_in.type == MSG_FIN_PARTIE) {
+                    // Remonter le message pour que main() le traite
+                    if (msg_in.data[0] == 1)      printf("\n+++ VICTOIRE ! Bien joué. +++\n");
+                    else if (msg_in.data[0] == 2) printf("\n--- DÉFAITE. ---\n");
+                    else                          printf("\n=== MATCH NUL ===\n");
+                    return -1;  // force la sortie de la boucle principale
+                }
+                            
                 if (msg_in.type == MSG_ETAT_PLATEAU) {
                     efface_marqueurs();
                     affiche_plateau_recu(&msg_in);
