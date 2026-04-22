@@ -10,7 +10,7 @@ make
 
 executer: 
 serveur:
-./serveur ;
+./server ;  <- SANS U
 client:
 ./client 1061
 
@@ -22,8 +22,8 @@ Jeu,
 Chat,
 Spectateur,
 Chat des spectateurs
-Historique des joueurs
 
 # Partiellement implémenté:
 Tournoi (autre branche, écrire t au lieu de j ou s)
+Historique des joueurs
 
