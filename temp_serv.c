@@ -339,33 +339,32 @@ typedef struct {
         if (send_msg(sock_current, &msg_out) < 0) goto fin_partie;
 
         while (1) {
-            printf("[partie] Abandon détecté\n");
+            if (recv_msg(sock_current, &msg_in) < 0) {
+                printf("[partie] Abandon détecté\n");
 
-            /* Identifier gagnant/perdant par socket */
-            int winner_sock = (sock_current == dmec) ? dmec_bis : dmec;
-            const char *nom_perdant = (sock_current == dmec) ? nom_joueur1 : nom_joueur2;
-            const char *nom_gagnant = (sock_current == dmec) ? nom_joueur2 : nom_joueur1;
+                /* Identifier gagnant/perdant par socket */
+                int winner_sock = (sock_current == dmec) ? dmec_bis : dmec;
+                const char *nom_perdant = (sock_current == dmec) ? nom_joueur1 : nom_joueur2;
+                const char *nom_gagnant = (sock_current == dmec) ? nom_joueur2 : nom_joueur1;
 
-            /* Notifier le gagnant */
-            Message win_msg, loss_msg;
-            memset(&win_msg,  0, sizeof(win_msg));
-            memset(&loss_msg, 0, sizeof(loss_msg));
-            win_msg.type    = MSG_FIN_PARTIE; win_msg.data[0]  = 1; win_msg.nb = 1;
-            loss_msg.type   = MSG_FIN_PARTIE; loss_msg.data[0] = 2; loss_msg.nb = 1;
-            send_msg(winner_sock,  &win_msg);
-            /* Le perdant est déconnecté, pas la peine d'envoyer */
+                /* Notifier le gagnant */
+                Message win_msg, loss_msg;
+                memset(&win_msg,  0, sizeof(win_msg));
+                memset(&loss_msg, 0, sizeof(loss_msg));
+                win_msg.type    = MSG_FIN_PARTIE; win_msg.data[0]  = 1; win_msg.nb = 1;
+                loss_msg.type   = MSG_FIN_PARTIE; loss_msg.data[0] = 2; loss_msg.nb = 1;
+                send_msg(winner_sock,  &win_msg);
+                /* Le perdant est déconnecté, pas la peine d'envoyer */
 
-            /* Mettre à jour l'historique */
-            UpdateStats(nom_gagnant, RESULT_WIN);
-            UpdateStats(nom_perdant, RESULT_LOSS);
+                /* Mettre à jour l'historique */
+                UpdateStats(nom_gagnant, RESULT_WIN);
+                UpdateStats(nom_perdant, RESULT_LOSS);
 
-            printf("[histo] %s: victoire | %s: defaite (forfait)\n",
-                   nom_gagnant, nom_perdant);
-
-            close(dmec);
-            close(dmec_bis);
-            break;
-
+                printf("[histo] %s: victoire | %s: defaite (forfait)\n",
+                    nom_gagnant, nom_perdant);
+                goto fin_partie;
+                
+            }
             if (msg_in.type == MSG_DEMANDE_COUPS) {
                 int src = msg_in.data[0];
                 int r1, c1;
