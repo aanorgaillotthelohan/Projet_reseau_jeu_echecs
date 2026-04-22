@@ -383,7 +383,6 @@ typedef struct {
                 }
                 send_msg(sock_current, &msg_out);
             }
-
             else if (msg_in.type == MSG_JOUER_COUP) {
                 int src = msg_in.data[0];
                 int dst = msg_in.data[1];
@@ -420,20 +419,37 @@ typedef struct {
                     send_msg(s->Clients[i].socketJoueur, &msg_out);
                 }
 
-                if (is_in_check(1)) {
+                /* --- Après chaque coup joué --- */
+                if (is_checkmate(1)) {
+                    memset(&msg_out, 0, sizeof(msg_out));
+                    msg_out.type = MSG_ECHEC_ET_MAT_BLANC;
+                    for (int i = 0; i < s->nbClients; i++)
+                        send_msg(s->Clients[i].socketJoueur, &msg_out);
+                    build_etat_plateau(&plateau, &eliminated_pieces_white, &eliminated_pieces_black, board);
+                    for (int i = 0; i < s->nbClients; i++)
+                        send_msg(s->Clients[i].socketJoueur, &plateau);
+                    goto fin_partie;
+                } else if (is_in_check(1)) {
                     memset(&msg_out, 0, sizeof(msg_out));
                     msg_out.type = MSG_ECHEC_BLANC;
-
-                    for(int i = 0; i < s->nbClients; i++){
+                    for (int i = 0; i < s->nbClients; i++)
                         send_msg(s->Clients[i].socketJoueur, &msg_out);
-                    }
                 }
-                if (is_in_check(2)) {
+
+                if (is_checkmate(2)) {
+                    memset(&msg_out, 0, sizeof(msg_out));
+                    msg_out.type = MSG_ECHEC_ET_MAT_NOIR;   /* à ajouter dans protocol.h */
+                    for (int i = 0; i < s->nbClients; i++)
+                        send_msg(s->Clients[i].socketJoueur, &msg_out);
+                    build_etat_plateau(&plateau, &eliminated_pieces_white, &eliminated_pieces_black, board);
+                    for (int i = 0; i < s->nbClients; i++)
+                        send_msg(s->Clients[i].socketJoueur, &plateau);
+                    goto fin_partie;
+                } else if (is_in_check(2)) {
                     memset(&msg_out, 0, sizeof(msg_out));
                     msg_out.type = MSG_ECHEC_NOIR;
-                    for(int i = 0; i < s->nbClients; i++){
+                    for (int i = 0; i < s->nbClients; i++)
                         send_msg(s->Clients[i].socketJoueur, &msg_out);
-                    }
                 }
 
                 build_etat_plateau(&plateau,

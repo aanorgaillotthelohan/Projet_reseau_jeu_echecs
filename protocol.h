@@ -15,6 +15,8 @@
 #define MSG_NOIR 11
 #define MSG_PORT 12 
 #define MSG_VICTOIRE_FORFAIT 99
+#define MSG_ECHEC_ET_MAT_BLANC 100
+#define MSG_ECHEC_ET_MAT_NOIR 101
 
 #define MSG_DATA_MAX  200   /* taille max du tableau data */
 

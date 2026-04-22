@@ -295,17 +295,20 @@ void* listener(void* arg){
             msg_out.type = MSG_JOUER_COUP; msg_out.data[0] = src; msg_out.data[1] = dst; msg_out.nb = 2;
             if (send_msg(sock, &msg_out) < 0) return -1;
 
+            // gestion des reception de coup coté client
             while (1) {
                 if (recv_msg(sock, &msg_in) < 0) return -1;
                 if (msg_in.type == MSG_COUP_INVALIDE) {
                     printf("\u26A0 Coup invalide, reessayez.\n"); break;
                 }
                 if (msg_in.type == MSG_COUP_OK)      { continue; }
-                if (msg_in.type == MSG_ECHEC_BLANC)  { printf("\n\u26A0\u26A0  ECHEC AU ROI BLANC !  \u26A0\u26A0\n"); continue; }
-                if (msg_in.type == MSG_ECHEC_NOIR)   { printf("\n\u26A0\u26A0  ECHEC AU ROI NOIR !  \u26A0\u26A0\n");  continue; }
+                if (msg_in.type == MSG_ECHEC_BLANC)  { printf("\nECHEC AU ROI BLANC ! \n"); continue; }
+                if (msg_in.type == MSG_ECHEC_NOIR)   { printf("\nECHEC AU ROI NOIR !  \n");  continue; }
+                if (msg_in.type == MSG_ECHEC_ET_MAT_BLANC)  { printf("\nECHEC ET MAT AU ROI BLANC ! \n"); break; }
+                if (msg_in.type == MSG_ECHEC_NOIR)   { printf("\n\u26A0\u26A0  ECHEC ET MAT AU ROI NOIR !  \u26A0\u26A0\n");  continue; }
                 if (msg_in.type == MSG_ETAT_PLATEAU) {
                     efface_marqueurs();
-                    affiche_plateau_recu(&msg_in);
+                    affiche_plateau_recu(&msg_in);  
                     printf("\u2705 Coup joue : %d -> %d\n", src, dst);
                     return 0;
                 }

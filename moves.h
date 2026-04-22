@@ -32,4 +32,5 @@ void queen(int r1, int c1, int player_id);
 /* Abandon */
 void abandon(int player_id);
 
+int is_checkmate(int player_id);
 #endif /* MOVES_H */
