@@ -308,7 +308,7 @@ void* listener(void* arg){
                 if (msg_in.type == MSG_ECHEC_NOIR)   { printf("\n\u26A0\u26A0  ECHEC ET MAT AU ROI NOIR !  \u26A0\u26A0\n");  continue; }
                 if (msg_in.type == MSG_ETAT_PLATEAU) {
                     efface_marqueurs();
-                    affiche_plateau_recu(&msg_in);  
+                    affiche_plateau_recu(&msg_in);
                     printf("\u2705 Coup joue : %d -> %d\n", src, dst);
                     return 0;
                 }
@@ -474,6 +474,35 @@ int main(int argc, char **argv){
         strcpy(msg.idJoueur, idJoueur);
         send(dsock_mec, &msg, sizeof(msg), 0);
 
+        if (choix == 'h') {
+                    /* Envoyer la demande au serveur */
+                    /* (le send ci-dessus l'a déjà envoyé) */
+
+                    /* Recevoir la réponse */
+                    Message m_histo;
+                    if (recv_msg(dsock_mec, &m_histo) == 0 &&
+                        m_histo.type == MSG_HISTO_REPONSE) {
+                        int p  = m_histo.data[0];
+                        int v  = m_histo.data[1];
+                        int d  = m_histo.data[2];
+                        int dr = m_histo.data[3];
+                        printf("\n+==============================+\n");
+                        printf("|  Historique de %-14s|\n", idJoueur);
+                        printf("+==============================+\n");
+                        printf("|  Parties jouees : %-10d|\n", p);
+                        printf("|  Victoires      : %-10d|\n", v);
+                        printf("|  Defaites       : %-10d|\n", d);
+                        printf("|  Nuls           : %-10d|\n", dr);
+                        if (p > 0)
+                            printf("|  Win rate       : %-9.0f%%|\n",
+                                (v * 100.0) / p);
+                        printf("+==============================+\n");
+                        printf("\nAppuyez sur Entree pour continuer...\n");
+                        getchar();
+                    }
+                    continue;  /* retour au menu sans lancer de partie */
+        }
+
         if(choix == 'j'){
             printf("Recherche de partie... (appuyez sur 'r' + Entrée pour annuler)\n");
             enRecherche = 1;
@@ -544,6 +573,29 @@ int main(int argc, char **argv){
                     }
                 }
                 continue;
+            }
+            if (msg_jeu.type == MSG_ECHEC_ET_MAT_BLANC) {
+                printf("\n*** ECHEC ET MAT - LES NOIRS GAGNENT ! ***\n");
+                continue;
+            }
+            if (msg_jeu.type == MSG_ECHEC_ET_MAT_NOIR) {
+                printf("\n*** ECHEC ET MAT - LES BLANCS GAGNENT ! ***\n");
+                continue;
+            }
+            if (msg_jeu.type == MSG_VICTOIRE_FORFAIT) {
+                printf("\n*** VICTOIRE PAR FORFAIT ! ***\n");
+                jeuEnCours = 0;
+                break;
+            }
+            if (msg_jeu.type == MSG_FIN_PARTIE) {
+                if (msg_jeu.data[0] == 1)
+                    printf("\n+++ VICTOIRE ! Bien joue. +++\n");
+                else if (msg_jeu.data[0] == 2)
+                    printf("\n--- DEFAITE. Meilleure chance la prochaine fois. ---\n");
+                else
+                    printf("\n=== MATCH NUL ===\n");
+                jeuEnCours = 0;
+                break;
             }
 
         }
