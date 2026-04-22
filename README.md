@@ -14,18 +14,16 @@ serveur:
 client:
 ./client 1061
 
-Attention, le client doit appuyer sur entrée lorsque il entre dans le match!
+Attention, le client doit appuyer sur entrer lorsque il entre dans le match!
 
 # Features:
 # Fini entierement:
 Jeu,
 Chat,
 Spectateur,
-chat des spectateurs
+Chat des spectateurs
+Historique des joueurs
 
 # Partiellement implémenté:
 Tournoi (autre branche, écrire t au lieu de j ou s)
 
-
-# Bugs connu:
-Client est obligé de relancer le processus si son adversaire se déconnecte.
