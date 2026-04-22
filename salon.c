@@ -18,6 +18,7 @@ Salon *creeSalon(int id, joueur *j1, joueur *j2)
     s->Clients[0] = *j1;
     s->Clients[1] = *j2;
 
+
     return s;
 }
 

@@ -75,14 +75,8 @@ void gestion_erreur(int res, const char *chaine)
     if (!fgets(dest, maxlen, stdin)) { dest[0] = '\0'; return; }
     dest[strcspn(dest, "\n")] = '\0';
 }
-void efface_marqueurs(void)
-{
-    for (int r = 0; r < 8; r++)
-        for (int c = 0; c < 8; c++)
-            if (board[r][c] == 'x') board[r][c] = ' ';
-}
 
-void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJoueur){
+void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJoueur, int estSpectateur){
 
     int dsock_udp = socket(PF_INET, SOCK_DGRAM, 0);
     gestion_erreur(dsock_udp, "sock udp");
@@ -114,14 +108,10 @@ void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJou
         time_t rawtime;
         struct tm * timeinfo;
         while(*inchat){
-            //signal(SIGINT,mortfils);
-            
-            //printf("-----------------\n");
 
             fgets(message_udp, sizeof(message_udp), stdin); 
             
             if(strcmp(message_udp,"Quit\n")==0){
-                //kill(pid_pere, SIGUSR1);
                 memset(message_udp, 0, sizeof(message_udp));
                 message_udp[0] = 'f';
                 // Cast explicite
@@ -139,6 +129,7 @@ void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJou
                 memset(message_udp_complete, 0, sizeof(message_udp_complete));
 
                 strcat(message_udp_complete, idJoueur);
+                if(estSpectateur){strcat(message_udp_complete, " (spectateur) ");}
                 strcat(message_udp_complete, heure);
                 strcat(message_udp_complete, ": ");
 
@@ -153,12 +144,10 @@ void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJou
     else{
         // Processus père (client qui lit)
         while(*inchat){
-            //signal(SIGINT,mortpere);
-            //signal(SIGUSR1,vraimort);
             timer +=1;
             
             efface_marqueurs();
-            display();
+            if(!estSpectateur){display();}
             // Cast explicite pour recvfrom
             ssize_t reschat = recvfrom(dsock_udp, stockmessage, sizeof(stockmessage), 0, (struct sockaddr *)&adUdp, &lgA);
             gestion_erreur(reschat, "recvfrom chat");
@@ -169,15 +158,21 @@ void gere_chat(int *inchat, struct sockaddr_in adServ, int idsalon, char * idJou
                 break;
             }
             else{
-                printf("\033c" );
-                //display();
+                if(!estSpectateur){
+                    printf("\033c" );
+                }
                 for (int i = 0; i < 10; i++){
                     if(strlen(stockmessage[i]) > 1){
                         printf("%s \n", stockmessage[i]);
                         fflush(stdout);
                     }
                 }
-                printf("-----------------'Quit' pour revenir au jeu\n");
+                if(estSpectateur){
+                    printf("-----------------\n");
+                }else{
+                    printf("-----------------'Quit' pour revenir au jeu\n");
+                }
+                
             }
 
 
@@ -242,6 +237,14 @@ void* listener(void* arg){
     printf("\n");
 }
 
+ void efface_marqueurs(void)
+{
+    for (int r = 0; r < 8; r++)
+        for (int c = 0; c < 8; c++)
+            if (board[r][c] == 'x') board[r][c] = ' ';
+}
+
+
  int tour_client(int sock, int player_id, struct sockaddr_in adServ, char * idJoueur)
 {
     const char *couleur = (player_id == 1) ? "Blanc" : "Noir";
@@ -259,7 +262,7 @@ void* listener(void* arg){
         int src = atoi(buf);
 
         if (src == 666){
-            gere_chat(&inchat, adServ,idsalon,idJoueur);
+            gere_chat(&inchat, adServ,idsalon,idJoueur,0);
         }
         else{
             if (src < 0 || src > 77 || src % 10 > 7) {
@@ -456,24 +459,32 @@ int main(int argc, char **argv){
                     printf("Vous avez rejoint le salon %d en tant que spectateur.\n", choixSalon);
                     idsalon = choixSalon;
                     Message msg;
-
+                    int inchat = 1;
+                    int f = fork();
                     while(1){
-                        if (recv_msg(dsock_mec, &msg) <= 0) {
-                            break;
+                        if(f == 0){
+                            if (recv_msg(dsock_mec, &msg) <= 0) {
+                                break;
+                            }
+                            // On traite le message selon son type
+                            if (msg.type == MSG_ETAT_PLATEAU) {
+                                // Effacer l'écran pour un affichage propre
+                                    printf("\033[H\033[J"); 
+                                    printf("--- VUE SPECTATEUR ---\n");
+                                    printf("\033c" );
+                                    affiche_plateau_recu(&msg);
+                            }
+                        }
+                        else{
+                            gere_chat(&inchat, adServ,idsalon,idJoueur,1);
+                            affiche_plateau_recu(&msg);
                         }
 
-                        // On traite le message selon son type
-                        if (msg.type == MSG_ETAT_PLATEAU) {
-                            // Effacer l'écran pour un affichage propre
-                            printf("\033[H\033[J"); 
-                            printf("--- VUE SPECTATEUR ---\n");
-                            affiche_plateau_recu(&msg);
-                            gere_chat(&inchat, adServ,idsalon,idJoueur);
-                        }
                     }          
                 }else {
                     printf("Salon invalide ou plein.\n");
                 }
+
             }
 
         if(!jeuEnCours) break;

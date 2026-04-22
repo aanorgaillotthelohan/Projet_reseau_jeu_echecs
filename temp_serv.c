@@ -519,9 +519,7 @@ typedef struct {
                                    &eliminated_pieces_white,
                                    &eliminated_pieces_black,
                                    board);
-                for(int i = 0; i < s->nbClients; i++){
-                    send_msg(s->Clients[i].socketJoueur, &msg_out);
-                }
+
                 // envoyer aux spectateurs
                 for(int i = 0; i < s->nbClients; i++){
                     send_msg(s->Clients[i].socketJoueur, &plateau);
@@ -542,7 +540,7 @@ fin_partie:
 }
 
 
- void *thread_client(void *arg)
+void *thread_client(void *arg)
 {
     int sockClient = *(int *)arg;
     free(arg);
@@ -727,9 +725,10 @@ fin_partie:
                     perror("Erreur envoi plateau initial");
                 }
             }
+        }
         /* ── Historique (non implémenté) ── [SV] */
             
-        }else if (msg.choix == 'h') {
+        else if (msg.choix == 'h') {
             /* Envoyer les stats encodées dans un Message */
             int p = 0, v = 0, d = 0, dr = 0;
             GetStats(idConnecte, &p, &v, &d, &dr);
