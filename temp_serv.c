@@ -339,7 +339,7 @@ typedef struct {
         if (send_msg(sock_current, &msg_out) < 0) goto fin_partie;
 
         while (1) {
-                printf("[partie] Abandon détecté\n");
+            printf("[partie] Abandon détecté\n");
 
             /* Identifier gagnant/perdant par socket */
             int winner_sock = (sock_current == dmec) ? dmec_bis : dmec;
