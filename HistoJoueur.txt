@@ -1,5 +1,5 @@
 aanor aanor
-k k 3 3 0 0
+k k 4 3 1 0
 o o
 ka ka
 op op
