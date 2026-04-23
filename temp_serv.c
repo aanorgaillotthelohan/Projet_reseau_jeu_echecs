@@ -247,6 +247,9 @@ typedef struct {
     int dmec     = a->sock1;
     int dmec_bis = a->sock2;
     free(a);
+    char nom_joueur1[128], nom_joueur2[128];
+    strncpy(nom_joueur1, a->nom1, 128);  
+    strncpy(nom_joueur2, a->nom2, 128);   
 
     Message msg_in, msg_out, plateau;
 
@@ -337,24 +340,31 @@ typedef struct {
 
         while (1) {
             if (recv_msg(sock_current, &msg_in) < 0) {
+                printf("[partie] Abandon détecté\n");
 
-            printf("[partie] Abandon détecté\n");
+                /* Identifier gagnant/perdant par socket */
+                int winner_sock = (sock_current == dmec) ? dmec_bis : dmec;
+                const char *nom_perdant = (sock_current == dmec) ? nom_joueur1 : nom_joueur2;
+                const char *nom_gagnant = (sock_current == dmec) ? nom_joueur2 : nom_joueur1;
 
-            int winner_sock = (sock_current == dmec) ? dmec_bis : dmec;
+                /* Notifier le gagnant */
+                Message win_msg, loss_msg;
+                memset(&win_msg,  0, sizeof(win_msg));
+                memset(&loss_msg, 0, sizeof(loss_msg));
+                win_msg.type    = MSG_FIN_PARTIE; win_msg.data[0]  = 1; win_msg.nb = 1;
+                loss_msg.type   = MSG_FIN_PARTIE; loss_msg.data[0] = 2; loss_msg.nb = 1;
+                send_msg(winner_sock,  &win_msg);
+                /* Le perdant est déconnecté, pas la peine d'envoyer */
 
-            Message win;
-            memset(&win, 0, sizeof(win));
-            win.type = MSG_VICTOIRE_FORFAIT;
+                /* Mettre à jour l'historique */
+                UpdateStats(nom_gagnant, RESULT_WIN);
+                UpdateStats(nom_perdant, RESULT_LOSS);
 
-            send_msg(winner_sock, &win);
-
-            // fermer proprement
-            close(dmec);
-            close(dmec_bis);
-
-            break;
-        }
-
+                printf("[histo] %s: victoire | %s: defaite (forfait)\n",
+                    nom_gagnant, nom_perdant);
+                goto fin_partie;
+                
+            }
             if (msg_in.type == MSG_DEMANDE_COUPS) {
                 int src = msg_in.data[0];
                 int r1, c1;
@@ -383,7 +393,6 @@ typedef struct {
                 }
                 send_msg(sock_current, &msg_out);
             }
-
             else if (msg_in.type == MSG_JOUER_COUP) {
                 int src = msg_in.data[0];
                 int dst = msg_in.data[1];
@@ -420,19 +429,90 @@ typedef struct {
                     send_msg(s->Clients[i].socketJoueur, &msg_out);
                 }
 
-                if (is_in_check(1)) {
+                if (is_checkmate(1)) {
+
+                    const char *nom_gagnant_n = (sock_noir == dmec) ? nom_joueur1 : nom_joueur2;
+                    const char *nom_perdant_b = (sock_blanc == dmec) ? nom_joueur1 : nom_joueur2;
+
+                    memset(&msg_out, 0, sizeof(msg_out));
+                    msg_out.type = MSG_ECHEC_ET_MAT_BLANC;
+                    for (int i = 0; i < s->nbClients; i++)
+                        send_msg(s->Clients[i].socketJoueur, &msg_out);
+
+                    // MSG_FIN_PARTIE : 1=victoire, 2=défaite 
+                    Message fin_g, fin_p;
+                    memset(&fin_g, 0, sizeof(fin_g)); memset(&fin_p, 0, sizeof(fin_p));
+                    fin_g.type = MSG_FIN_PARTIE; fin_g.data[0] = 1; fin_g.nb = 1;
+                    fin_p.type = MSG_FIN_PARTIE; fin_p.data[0] = 2; fin_p.nb = 1;
+                    send_msg(sock_noir,  &fin_g);
+                    send_msg(sock_blanc, &fin_p);
+
+                    UpdateStats(nom_gagnant_n, RESULT_WIN);
+                    UpdateStats(nom_perdant_b, RESULT_LOSS);
+                    printf("[histo] %s: victoire | %s: defaite (mat blanc)\n",
+                           nom_gagnant_n, nom_perdant_b);
+
+                    build_etat_plateau(&plateau, &eliminated_pieces_white,
+                                       &eliminated_pieces_black, board);
+                    for (int i = 0; i < s->nbClients; i++){
+                        send_msg(s->Clients[i].socketJoueur, &plateau);
+                    }
+                    msg_out.type = MSG_ECHEC_ET_MAT_BLANC;
+                    send_msg(sock_blanc, &msg_out);
+                    send_msg(sock_noir,  &msg_out);
+
+                    send_msg(sock_noir,  &fin_g);   // victoire
+                    send_msg(sock_blanc, &fin_p);   // défaite
+                    goto fin_partie;
+
+                } else if (is_in_check(1)) {
                     memset(&msg_out, 0, sizeof(msg_out));
                     msg_out.type = MSG_ECHEC_BLANC;
-                    for(int i = 0; i < s->nbClients; i++){
+                    for (int i = 0; i < s->nbClients; i++)
                         send_msg(s->Clients[i].socketJoueur, &msg_out);
-                    }
                 }
-                if (is_in_check(2)) {
+
+                if (is_checkmate(2)) {
+                    /* Noir est mat → Blanc gagne */
+                    const char *nom_gagnant_b = (sock_blanc == dmec) ? nom_joueur1 : nom_joueur2;
+                    const char *nom_perdant_n = (sock_noir == dmec) ? nom_joueur1 : nom_joueur2;
+
+                    memset(&msg_out, 0, sizeof(msg_out));
+                    msg_out.type = MSG_ECHEC_ET_MAT_NOIR;
+                    for (int i = 0; i < s->nbClients; i++)
+                        send_msg(s->Clients[i].socketJoueur, &msg_out);
+
+                    Message fin_g, fin_p;
+                    memset(&fin_g, 0, sizeof(fin_g)); memset(&fin_p, 0, sizeof(fin_p));
+                    fin_g.type = MSG_FIN_PARTIE; fin_g.data[0] = 1; fin_g.nb = 1;
+                    fin_p.type = MSG_FIN_PARTIE; fin_p.data[0] = 2; fin_p.nb = 1;
+                    send_msg(sock_blanc, &fin_g);
+                    send_msg(sock_noir,  &fin_p);
+
+                    UpdateStats(nom_gagnant_b, RESULT_WIN);
+                    UpdateStats(nom_perdant_n, RESULT_LOSS);
+                    printf("[histo] %s: victoire | %s: defaite (mat noir)\n",
+                           nom_gagnant_b, nom_perdant_n);
+
+                    build_etat_plateau(&plateau, &eliminated_pieces_white,
+                                       &eliminated_pieces_black, board);
+                    for (int i = 0; i < s->nbClients; i++){
+                        send_msg(s->Clients[i].socketJoueur, &plateau);
+                    }
+                    send_msg(sock_blanc, &msg_out);
+                    send_msg(sock_noir,  &msg_out);
+
+                    send_msg(sock_noir,  &fin_g);   // victoire
+                    send_msg(sock_blanc, &fin_p);   // défaite
+                    goto fin_partie;
+                    }
+                    else if (is_in_check(2)) {
                     memset(&msg_out, 0, sizeof(msg_out));
                     msg_out.type = MSG_ECHEC_NOIR;
-                    for(int i = 0; i < s->nbClients; i++){
+                    for (int i = 0; i < s->nbClients; i++){
                         send_msg(s->Clients[i].socketJoueur, &msg_out);
                     }
+                    
                 }
 
                 build_etat_plateau(&plateau,
@@ -460,7 +540,7 @@ fin_partie:
 }
 
 
- void *thread_client(void *arg)
+void *thread_client(void *arg)
 {
     int sockClient = *(int *)arg;
     free(arg);
@@ -647,12 +727,23 @@ fin_partie:
             }
         }
         /* ── Historique (non implémenté) ── [SV] */
+            
         else if (msg.choix == 'h') {
-            printf("[client %d] Historique non implémenté\n", sockClient);
+            /* Envoyer les stats encodées dans un Message */
+            int p = 0, v = 0, d = 0, dr = 0;
+            GetStats(idConnecte, &p, &v, &d, &dr);
+            Message m_histo;
+            memset(&m_histo, 0, sizeof(m_histo));
+            m_histo.type    = MSG_HISTO_REPONSE;
+            m_histo.data[0] = p;
+            m_histo.data[1] = v;
+            m_histo.data[2] = d;
+            m_histo.data[3] = dr;
+            m_histo.nb      = 4;
+            send_msg(sockClient, &m_histo);
         }
         
     }
-
     close(sockClient);
     return NULL;
 }

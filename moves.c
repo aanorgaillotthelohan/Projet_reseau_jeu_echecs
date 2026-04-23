@@ -1,6 +1,7 @@
 #include "moves.h"
 #include "pieces.h"
 #include "display.h"
+#include "players.h"
 
 /* ════════════════════════════════════════════════════════════════════════════
  *  TEST DE PRÉSENCE
@@ -22,6 +23,51 @@ int check2(int x, int y)  /* Blanc en (x,y) ? */
     case 'P': case 'R': case 'H': case 'C': case 'K': case 'Q': return 1;
     default: return 0;
     }
+}
+
+
+int is_checkmate(int player_id)
+{
+    if (!is_in_check(player_id)) return 0;
+
+    for (int r = 0; r < 8; r++) {
+        for (int c = 0; c < 8; c++) {
+            int is_mine = (player_id == 1) ? check2(r, c) : check(r, c);
+            if (!is_mine) continue;
+
+            /* Calcul des coups légaux pour cette pièce */
+            if (player_id == 1) compute_moves_white(r, c);
+            else                compute_moves_black(r, c);
+
+            int nb_moves = possible_moves_index;
+            int moves[100];
+            memcpy(moves, possible_moves, nb_moves * sizeof(int));
+
+            for (int i = 0; i < nb_moves; i++) {
+                /* BUG CORRIGÉ : possible_moves stocke des rangées INTERNES */
+                int dest_r = moves[i] / 10;   /* <-- était 7-(moves[i]/10) */
+                int dest_c = moves[i] % 10;
+
+                /* Sauvegarde */
+                char piece_depart = board[r][c];
+                char piece_dest   = board[dest_r][dest_c];
+
+                /* Simulation */
+                board[dest_r][dest_c] = piece_depart;
+                board[r][c] = ' ';
+
+                int toujours_en_echec = is_in_check(player_id);
+
+                /* Restauration */
+                board[r][c]           = piece_depart;
+                board[dest_r][dest_c] = piece_dest;
+
+                if (!toujours_en_echec) return 0;
+            }
+        }
+    }
+
+    return 1;  /* Aucun coup ne sort du mat → ÉCHEC ET MAT */
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

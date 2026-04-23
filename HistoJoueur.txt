@@ -1,8 +1,8 @@
-
 aanor aanor
-k k
+k k 4 3 1 0
 o o
 ka ka
 op op
-g g
+g g 7 3 4 0
 m m
+spec spec
